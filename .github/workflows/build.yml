@@ -1,33 +1,24 @@
-name: Build Multi-Platform
+name: Build and Test
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main, claude/rewrite-wails-app-to-web-server]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
-  GO_VERSION: '1.25.5'
-  NODE_VERSION: '24'
+  GO_VERSION: '1.22'
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9'
 
 jobs:
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        shell: bash
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/}
-          else
-            VERSION="dev"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -42,7 +33,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Get pnpm store directory
         shell: bash
@@ -50,7 +41,6 @@ jobs:
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
-        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
@@ -58,59 +48,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      - name: Check Go formatting
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "Go files are not formatted. Run: gofmt -s -w ."
+            gofmt -s -l .
+            exit 1
+          fi
+
+      - name: Run go mod tidy check
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "go.mod or go.sum is not tidy. Run: go mod tidy"
+            git diff go.mod go.sum
+            exit 1
+          fi
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: |
-          pnpm install
-          pnpm run generate-icon
+        run: pnpm install --frozen-lockfile
 
-      - name: Install UPX
-        run: |
-          choco install upx -y
-
-      - name: Build application
-        run: wails build -platform windows/amd64
-
-      - name: Compress with UPX
-        run: |
-          upx --best --lzma "build\bin\SpotiFLAC.exe"
-
-      - name: Prepare artifacts
-        run: |
-          mkdir -p dist
-          Copy-Item -Path "build\bin\SpotiFLAC.exe" -Destination "dist\SpotiFLAC.exe"
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-portable
-          path: dist/SpotiFLAC.exe
-          retention-days: 7
-
-  build-macos:
-    name: Build macOS
-    runs-on: macos-latest
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    needs: lint-and-test
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/}
-          else
-            VERSION="dev"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -120,98 +85,14 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Get pnpm store directory
+        shell: bash
         run: |
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
-        continue-on-error: true
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: |
-          pnpm install
-          pnpm run generate-icon
-
-      - name: Build application
-        run: wails build -platform darwin/universal
-
-      - name: Create DMG
-        run: |
-          mkdir -p dist
-          # Install create-dmg if not available
-          brew install create-dmg || true
-
-          # Create DMG
-          create-dmg \
-            --volname "SpotiFLAC" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "SpotiFLAC.app" 175 120 \
-            --hide-extension "SpotiFLAC.app" \
-            --app-drop-link 425 120 \
-            "dist/SpotiFLAC.dmg" \
-            "build/bin/SpotiFLAC.app" || \
-          # Fallback to hdiutil if create-dmg fails
-          hdiutil create -volname SpotiFLAC -srcfolder build/bin/SpotiFLAC.app -ov -format UDZO dist/SpotiFLAC.dmg
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-portable
-          path: dist/SpotiFLAC.dmg
-          retention-days: 7
-
-  build-linux:
-    name: Build Linux
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/}
-          else
-            VERSION="dev"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Get pnpm store directory
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        continue-on-error: true
         uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
@@ -220,174 +101,114 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2 imagemagick upx-ucl
-
-          # Create symlink for webkit2gtk-4.0 -> webkit2gtk-4.1 (Ubuntu 24.04 compatibility)
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
-
-      - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-      - name: Install frontend dependencies
         working-directory: frontend
-        run: |
-          pnpm install
-          pnpm run generate-icon
+        run: pnpm install --frozen-lockfile
 
-      - name: Build application
-        run: wails build -platform linux/amd64
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm run build
 
-      - name: Compress with UPX
-        run: |
-          upx --best --lzma build/bin/SpotiFLAC
-
-      - name: Cache appimagetool
-        id: cache-appimagetool
-        uses: actions/cache@v4
-        with:
-          path: appimagetool
-          key: appimagetool-x86_64-v1
-
-      - name: Download appimagetool
-        if: steps.cache-appimagetool.outputs.cache-hit != 'true'
-        run: |
-          wget --timeout=30 --tries=5 --retry-connrefused --waitretry=5 -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage || \
-          wget --timeout=30 --tries=5 --retry-connrefused --waitretry=5 -O appimagetool https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage
-
-      - name: Make appimagetool executable
-        run: chmod +x appimagetool
-
-      - name: Create AppImage
-        run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/applications
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-
-          # Copy binary
-          cp build/bin/SpotiFLAC AppDir/usr/bin/
-
-          # Create desktop file
-          cat > AppDir/spotiflac.desktop << 'EOF'
-          [Desktop Entry]
-          Name=SpotiFLAC
-          Exec=SpotiFLAC
-          Icon=spotiflac
-          Type=Application
-          Categories=Audio;AudioVideo;
-          Comment=Get Spotify tracks in true FLAC from Tidal/Deezer
-          EOF
-
-          cp AppDir/spotiflac.desktop AppDir/usr/share/applications/
-
-          # Create icon
-          if [ -f "build/appicon.png" ]; then
-            convert build/appicon.png -resize 256x256 AppDir/spotiflac.png
-          elif [ -f "frontend/public/icon.svg" ]; then
-            convert -background none -size 256x256 frontend/public/icon.svg AppDir/spotiflac.png
-          else
-            echo "Warning: No icon found, building without icon"
-          fi
-
-          # Copy icon if exists
-          if [ -f "AppDir/spotiflac.png" ]; then
-            cp AppDir/spotiflac.png AppDir/usr/share/icons/hicolor/256x256/apps/
-            cp AppDir/spotiflac.png AppDir/.DirIcon
-          fi
-
-          # Create AppRun
-          cat > AppDir/AppRun << 'EOF'
-          #!/bin/sh
-          SELF=$(readlink -f "$0")
-          HERE=${SELF%/*}
-          export PATH="${HERE}/usr/bin/:${PATH}"
-          export LD_LIBRARY_PATH="${HERE}/usr/lib/:${LD_LIBRARY_PATH}"
-          exec "${HERE}/usr/bin/SpotiFLAC" "$@"
-          EOF
-          chmod +x AppDir/AppRun
-
-          # Create AppImage
-          mkdir -p dist
-          ARCH=x86_64 ./appimagetool --no-appstream AppDir dist/SpotiFLAC.AppImage
-
-      - name: Upload artifacts
+      - name: Upload frontend build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-portable
-          path: dist/SpotiFLAC.AppImage
+          name: frontend-dist
+          path: frontend/dist/
           retention-days: 7
 
-  create-release:
-    name: Create Release
-    needs: [build-windows, build-macos, build-linux]
+  build-go:
+    name: Build Go Binary
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
+    needs: build-frontend
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get version from tag
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
-      - name: Download all artifacts
+      - name: Download frontend artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: frontend-dist
+          path: frontend/dist/
 
-      - name: Display structure of downloaded files
-        run: ls -R artifacts
+      - name: Build Go binary
+        run: |
+          go build -v -o spotiflac .
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Go binary
+        uses: actions/upload-artifact@v4
         with:
-          draft: true
-          prerelease: false
-          generate_release_notes: false
-          body: |
-            ## Changelog
+          name: spotiflac-binary
+          path: spotiflac
+          retention-days: 7
 
-            ## Downloads
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: build-frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - `SpotiFLAC.exe` - Windows
-            - `SpotiFLAC.dmg` - macOS
-            - `SpotiFLAC.AppImage` - Linux
+      - name: Download frontend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
 
-            <details>
-            <summary><b>Linux Requirements</b></summary>
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-            The AppImage requires `webkit2gtk-4.1` to be installed on your system:
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: spotiflac:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-            **Ubuntu/Debian:**
-            ```bash
-            sudo apt install libwebkit2gtk-4.1-0
-            ```
+  test-server:
+    name: Test Server Startup
+    runs-on: ubuntu-latest
+    needs: build-go
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            **Arch Linux:**
-            ```bash
-            sudo pacman -S webkit2gtk-4.1
-            ```
+      - name: Download Go binary
+        uses: actions/download-artifact@v4
+        with:
+          name: spotiflac-binary
 
-            **Fedora:**
-            ```bash
-            sudo dnf install webkit2gtk4.1
-            ```
+      - name: Make binary executable
+        run: chmod +x spotiflac
 
-            After installing the dependency, make the AppImage executable:
-            ```bash
-            chmod +x SpotiFLAC.AppImage
-            ./SpotiFLAC.AppImage
-            ```
+      - name: Test server startup
+        run: |
+          # Start server in background
+          PORT=8080 DOWNLOAD_PATH=/tmp/test-downloads DATA_DIR=/tmp/test-data ./spotiflac &
+          SERVER_PID=$!
 
-            </details>
-          files: |
-            artifacts/windows-portable/*.exe
-            artifacts/macos-portable/*.dmg
-            artifacts/linux-portable/*.AppImage
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Wait for server to start
+          sleep 5
+
+          # Check if server is running
+          if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "Server failed to start"
+            exit 1
+          fi
+
+          # Test health endpoint
+          if ! curl -f http://localhost:8080/api/health; then
+            echo "Health check failed"
+            kill $SERVER_PID
+            exit 1
+          fi
+
+          # Cleanup
+          kill $SERVER_PID
+          echo "Server startup test passed!"

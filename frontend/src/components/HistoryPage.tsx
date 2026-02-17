@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
-import { GetDownloadHistory, ClearDownloadHistory, GetPreviewURL, GetFetchHistory, DeleteDownloadHistoryItem, DeleteFetchHistoryItem, ClearFetchHistoryByType } from "../../wailsjs/go/main/App";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { openExternal } from "@/lib/utils";
 const formatDate = (timestamp: number) => {
@@ -64,20 +63,34 @@ export function HistoryPage({ onHistorySelect }: HistoryPageProps) {
     const ITEMS_PER_PAGE = 50;
     const fetchDownloadHistory = async () => {
         try {
-            const items = await GetDownloadHistory();
-            setDownloadHistory(items || []);
+            const response = await fetch('/api/history');
+            if (response.ok) {
+                const items = await response.json();
+                setDownloadHistory(items || []);
+            } else {
+                console.error("Failed to fetch download history:", response.statusText);
+                setDownloadHistory([]);
+            }
         }
         catch (err) {
             console.error("Failed to fetch download history:", err);
+            setDownloadHistory([]);
         }
     };
     const fetchFetchHistory = async () => {
         try {
-            const items = await GetFetchHistory();
-            setFetchHistory(items || []);
+            const response = await fetch('/api/fetch-history');
+            if (response.ok) {
+                const items = await response.json();
+                setFetchHistory(items || []);
+            } else {
+                console.error("Failed to fetch fetch history:", response.statusText);
+                setFetchHistory([]);
+            }
         }
         catch (err) {
             console.error("Failed to fetch fetch history:", err);
+            setFetchHistory([]);
         }
     };
     useEffect(() => {
@@ -160,14 +173,17 @@ export function HistoryPage({ onHistorySelect }: HistoryPageProps) {
             audioRef.current.pause();
         }
         try {
-            const url = await GetPreviewURL(spotifyId);
-            if (url) {
-                const audio = new Audio(url);
-                audioRef.current = audio;
-                audio.volume = 0.5;
-                audio.onended = () => setPlayingPreviewId(null);
-                audio.play();
-                setPlayingPreviewId(id);
+            const response = await fetch(`/api/preview-url?spotify_id=${encodeURIComponent(spotifyId)}`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.url) {
+                    const audio = new Audio(data.url);
+                    audioRef.current = audio;
+                    audio.volume = 0.5;
+                    audio.onended = () => setPlayingPreviewId(null);
+                    audio.play();
+                    setPlayingPreviewId(id);
+                }
             }
         }
         catch (e) {
@@ -175,23 +191,59 @@ export function HistoryPage({ onHistorySelect }: HistoryPageProps) {
         }
     };
     const handleClearDownloadHistory = async () => {
-        await ClearDownloadHistory();
-        fetchDownloadHistory();
-        setShowClearDownloadConfirm(false);
+        try {
+            const response = await fetch('/api/history', { method: 'DELETE' });
+            if (response.ok) {
+                fetchDownloadHistory();
+                setShowClearDownloadConfirm(false);
+            } else {
+                console.error("Failed to clear download history");
+            }
+        }
+        catch (err) {
+            console.error("Failed to clear download history:", err);
+        }
     };
     const handleDeleteDownloadItem = async (id: string) => {
-        await DeleteDownloadHistoryItem(id);
-        setDownloadHistory(prev => prev.filter(item => item.id !== id));
+        try {
+            const response = await fetch(`/api/history/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                setDownloadHistory(prev => prev.filter(item => item.id !== id));
+            } else {
+                console.error("Failed to delete download item");
+            }
+        }
+        catch (err) {
+            console.error("Failed to delete download item:", err);
+        }
     };
     const handleClearFetchHistory = async () => {
-        await ClearFetchHistoryByType(activeFetchTab);
-        fetchFetchHistory();
-        setShowClearFetchConfirm(false);
+        try {
+            const response = await fetch(`/api/fetch-history/type/${activeFetchTab}`, { method: 'DELETE' });
+            if (response.ok) {
+                fetchFetchHistory();
+                setShowClearFetchConfirm(false);
+            } else {
+                console.error("Failed to clear fetch history");
+            }
+        }
+        catch (err) {
+            console.error("Failed to clear fetch history:", err);
+        }
     };
     const handleDeleteFetchItem = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        await DeleteFetchHistoryItem(id);
-        setFetchHistory(prev => prev.filter(item => item.id !== id));
+        try {
+            const response = await fetch(`/api/fetch-history/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                setFetchHistory(prev => prev.filter(item => item.id !== id));
+            } else {
+                console.error("Failed to delete fetch item");
+            }
+        }
+        catch (err) {
+            console.error("Failed to delete fetch item:", err);
+        }
     };
     const getPaginationPages = (current: number, total: number): (number | 'ellipsis')[] => {
         if (total <= 10)

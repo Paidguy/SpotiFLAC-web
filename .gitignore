@@ -1,14 +1,6 @@
-# Wails Build
-build/
-*.exe
-*.dll
-*.dylib
-*.so
-
-# Wails Generated Files
-frontend/wailsjs/
-
-# Go
+# Go Build Output
+spotiflac
+spotiflac.exe
 *.test
 *.out
 go.work
@@ -27,6 +19,12 @@ pnpm-debug.log*
 .npm
 .yarn
 *.tsbuildinfo
+
+# Application Data
+downloads/
+data/
+*.db
+test-downloads/
 
 # IDE / Editors
 .vscode/

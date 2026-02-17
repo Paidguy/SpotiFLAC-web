@@ -3,15 +3,14 @@ import { X, Download, CheckCircle2, XCircle, Clock, FileCheck, Trash2, HardDrive
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { GetDownloadQueue, ClearCompletedDownloads, ClearAllDownloads, ExportFailedDownloads } from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
-import { backend } from "../../wailsjs/go/models";
+import type { DownloadQueueInfo } from "@/types/api";
 interface DownloadQueueProps {
     isOpen: boolean;
     onClose: () => void;
 }
 export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
-    const [queueInfo, setQueueInfo] = useState<backend.DownloadQueueInfo>(new backend.DownloadQueueInfo({
+    const [queueInfo, setQueueInfo] = useState<DownloadQueueInfo>({
         is_downloading: false,
         queue: [],
         current_speed: 0,
@@ -21,27 +20,69 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
         completed_count: 0,
         failed_count: 0,
         skipped_count: 0,
-    }));
+    });
     useEffect(() => {
         if (!isOpen)
             return;
+
         const fetchQueue = async () => {
             try {
-                const info = await GetDownloadQueue();
+                const response = await fetch('/api/download-queue');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch download queue: ${response.statusText}`);
+                }
+                const info: DownloadQueueInfo = await response.json();
                 setQueueInfo(info);
             }
             catch (error) {
                 console.error("Failed to get download queue:", error);
             }
         };
+
+        // Initial fetch
         fetchQueue();
-        const interval = setInterval(fetchQueue, 500);
-        return () => clearInterval(interval);
+
+        // Setup SSE for real-time updates
+        const eventSource = new EventSource('/api/events');
+
+        eventSource.addEventListener('download:progress', (event: MessageEvent) => {
+            try {
+                // Refresh queue when we get progress events to show real-time updates
+                // This is more efficient than polling every 500ms
+                JSON.parse(event.data); // Parse to validate, but we fetch full queue anyway
+                fetchQueue();
+            } catch (err) {
+                console.error('Failed to parse download progress event:', err);
+            }
+        });
+
+        eventSource.onerror = (error) => {
+            console.error('SSE connection error in DownloadQueue:', error);
+        };
+
+        // Fallback polling at reduced frequency (2s instead of 500ms)
+        // This ensures we don't miss updates if SSE connection drops
+        const interval = setInterval(fetchQueue, 2000);
+
+        return () => {
+            clearInterval(interval);
+            eventSource.close();
+        };
     }, [isOpen]);
     const handleClearHistory = async () => {
         try {
-            await ClearCompletedDownloads();
-            const info = await GetDownloadQueue();
+            const response = await fetch('/api/clear-completed', {
+                method: 'POST',
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to clear completed downloads: ${response.statusText}`);
+            }
+
+            const queueResponse = await fetch('/api/download-queue');
+            if (!queueResponse.ok) {
+                throw new Error(`Failed to fetch download queue: ${queueResponse.statusText}`);
+            }
+            const info: DownloadQueueInfo = await queueResponse.json();
             setQueueInfo(info);
         }
         catch (error) {
@@ -50,8 +91,18 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
     };
     const handleReset = async () => {
         try {
-            await ClearAllDownloads();
-            const info = await GetDownloadQueue();
+            const response = await fetch('/api/clear-all', {
+                method: 'POST',
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to clear all downloads: ${response.statusText}`);
+            }
+
+            const queueResponse = await fetch('/api/download-queue');
+            if (!queueResponse.ok) {
+                throw new Error(`Failed to fetch download queue: ${queueResponse.statusText}`);
+            }
+            const info: DownloadQueueInfo = await queueResponse.json();
             setQueueInfo(info);
             toast.success("Download queue reset");
         }
@@ -61,7 +112,11 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
     };
     const handleExportFailed = async () => {
         try {
-            const message = await ExportFailedDownloads();
+            const response = await fetch('/api/export-failed');
+            if (!response.ok) {
+                throw new Error(`Failed to export failed downloads: ${response.statusText}`);
+            }
+            const message = await response.text();
             if (message.startsWith("Successfully")) {
                 toast.success(message);
             }

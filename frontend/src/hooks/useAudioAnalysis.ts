@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { AnalyzeTrack } from "../../wailsjs/go/main/App";
+import { analyzeAudioFile } from "@/lib/api";
 import type { AnalysisResult } from "@/types/api";
 import { logger } from "@/lib/logger";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
@@ -64,8 +64,7 @@ export function useAudioAnalysis() {
         try {
             logger.info(`Analyzing audio file: ${filePath}`);
             const startTime = Date.now();
-            const response = await AnalyzeTrack(filePath);
-            const analysisResult: AnalysisResult = JSON.parse(response);
+            const analysisResult = await analyzeAudioFile(filePath);
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
             logger.success(`Audio analysis completed in ${elapsed}s`);
             if (analysisResult.spectrum) {

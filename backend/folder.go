@@ -2,10 +2,9 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"runtime"
-
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func OpenFolderInExplorer(path string) error {
@@ -25,75 +24,17 @@ func OpenFolderInExplorer(path string) error {
 	return cmd.Start()
 }
 
+// SelectFolderDialog is not supported in web mode
 func SelectFolderDialog(ctx context.Context, defaultPath string) (string, error) {
-
-	if defaultPath == "" {
-		defaultPath = GetDefaultMusicPath()
-	}
-
-	options := wailsRuntime.OpenDialogOptions{
-		Title:            "Select Download Folder",
-		DefaultDirectory: defaultPath,
-	}
-
-	selectedPath, err := wailsRuntime.OpenDirectoryDialog(ctx, options)
-	if err != nil {
-		return "", err
-	}
-
-	if selectedPath == "" {
-		return "", nil
-	}
-
-	return selectedPath, nil
+	return "", fmt.Errorf("folder selection dialogs are not supported in web mode")
 }
 
+// SelectFileDialog is not supported in web mode
 func SelectFileDialog(ctx context.Context) (string, error) {
-	options := wailsRuntime.OpenDialogOptions{
-		Title: "Select FLAC File for Analysis",
-		Filters: []wailsRuntime.FileFilter{
-			{
-				DisplayName: "FLAC Audio Files (*.flac)",
-				Pattern:     "*.flac",
-			},
-			{
-				DisplayName: "All Files (*.*)",
-				Pattern:     "*.*",
-			},
-		},
-	}
-
-	selectedFile, err := wailsRuntime.OpenFileDialog(ctx, options)
-	if err != nil {
-		return "", err
-	}
-
-	if selectedFile == "" {
-		return "", nil
-	}
-
-	return selectedFile, nil
+	return "", fmt.Errorf("file selection dialogs are not supported in web mode")
 }
 
+// SelectImageVideoDialog is not supported in web mode
 func SelectImageVideoDialog(ctx context.Context) ([]string, error) {
-	options := wailsRuntime.OpenDialogOptions{
-		Title: "Select Image or Video",
-		Filters: []wailsRuntime.FileFilter{
-			{
-				DisplayName: "Supported Files (*.jpg, *.png, *.mp4, *.mov, ...)",
-				Pattern:     "*.jpg;*.jpeg;*.png;*.gif;*.webp;*.mp4;*.mkv;*.webm;*.mov",
-			},
-			{
-				DisplayName: "All Files (*.*)",
-				Pattern:     "*.*",
-			},
-		},
-	}
-
-	selectedPaths, err := wailsRuntime.OpenMultipleFilesDialog(ctx, options)
-	if err != nil {
-		return nil, err
-	}
-
-	return selectedPaths, nil
+	return nil, fmt.Errorf("file selection dialogs are not supported in web mode")
 }

@@ -1,13 +1,13 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem, } from "@/components/ui/toggle-group";
 import { Upload, X, CheckCircle2, AlertCircle, Trash2, FileMusic, WandSparkles, } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { ConvertAudio, SelectAudioFiles, } from "../../wailsjs/go/main/App";
+import { convertAudio } from "@/lib/api";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
-import { OnFileDrop, OnFileDropOff } from "../../wailsjs/runtime/runtime";
 interface AudioFile {
+    file: File;
     path: string;
     name: string;
     format: string;
@@ -37,18 +37,7 @@ const M4A_CODEC_OPTIONS = [
 const STORAGE_KEY = "spotiflac_audio_converter_state";
 export function AudioConverterPage() {
     const [files, setFiles] = useState<AudioFile[]>(() => {
-        try {
-            const saved = sessionStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (parsed.files && Array.isArray(parsed.files) && parsed.files.length > 0) {
-                    return parsed.files;
-                }
-            }
-        }
-        catch (err) {
-            console.error("Failed to load saved state:", err);
-        }
+        // Don't restore files from sessionStorage since File objects can't be serialized
         return [];
     });
     const [outputFormat, setOutputFormat] = useState<"mp3" | "m4a">(() => {
@@ -96,8 +85,8 @@ export function AudioConverterPage() {
     const [converting, setConverting] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const saveState = useCallback((stateToSave: {
-        files: AudioFile[];
         outputFormat: "mp3" | "m4a";
         bitrate: string;
         m4aCodec: "aac" | "alac";
@@ -110,8 +99,8 @@ export function AudioConverterPage() {
         }
     }, []);
     useEffect(() => {
-        saveState({ files, outputFormat, bitrate, m4aCodec });
-    }, [files, outputFormat, bitrate, m4aCodec, saveState]);
+        saveState({ outputFormat, bitrate, m4aCodec });
+    }, [outputFormat, bitrate, m4aCodec, saveState]);
     useEffect(() => {
         if (files.length === 0)
             return;
@@ -140,59 +129,66 @@ export function AudioConverterPage() {
         };
     }, []);
     const handleSelectFiles = async () => {
-        try {
-            const selectedFiles = await SelectAudioFiles();
-            if (selectedFiles && selectedFiles.length > 0) {
-                addFiles(selectedFiles);
-            }
+        fileInputRef.current?.click();
+    };
+
+    const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFiles = Array.from(e.target.files || []);
+        if (selectedFiles.length > 0) {
+            addFiles(selectedFiles);
         }
-        catch (err) {
-            toast.error("File Selection Failed", {
-                description: err instanceof Error ? err.message : "Failed to select files",
-            });
+        // Reset the input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
         }
     };
-    const addFiles = useCallback(async (paths: string[]) => {
+
+    const addFiles = useCallback(async (fileList: File[]) => {
         const validExtensions = [".mp3", ".flac"];
-        const m4aFiles = paths.filter((path) => {
-            const ext = path.toLowerCase().slice(path.lastIndexOf("."));
+
+        const m4aFiles = fileList.filter((file) => {
+            const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
             return ext === ".m4a";
         });
+
         if (m4aFiles.length > 0) {
             toast.error("M4A files not supported", {
                 description: "Only FLAC and MP3 files are supported as input. Please convert M4A files first.",
             });
         }
-        const GetFileSizes = (files: string[]): Promise<Record<string, number>> => (window as any)["go"]["main"]["App"]["GetFileSizes"](files);
-        const validPaths = paths.filter((path) => {
-            const ext = path.toLowerCase().slice(path.lastIndexOf("."));
+
+        const validFiles = fileList.filter((file) => {
+            const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
             return validExtensions.includes(ext);
         });
-        const fileSizes = validPaths.length > 0 ? await GetFileSizes(validPaths) : {};
+
         setFiles((prev) => {
-            const newFiles: AudioFile[] = validPaths
-                .filter((path) => !prev.some((f) => f.path === path))
-                .map((path) => {
-                const name = path.split(/[/\\]/).pop() || path;
-                const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
-                return {
-                    path,
-                    name,
-                    format: ext,
-                    size: fileSizes[path] || 0,
-                    status: "pending" as const,
-                };
-            });
+            const newFiles: AudioFile[] = validFiles
+                .filter((file) => !prev.some((f) => f.name === file.name && f.size === file.size))
+                .map((file) => {
+                    const name = file.name;
+                    const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+                    return {
+                        file,
+                        path: name, // In web mode, path is just the filename
+                        name,
+                        format: ext,
+                        size: file.size,
+                        status: "pending" as const,
+                    };
+                });
+
             if (newFiles.length > 0) {
-                if (paths.length > newFiles.length) {
-                    const skipped = paths.length - newFiles.length;
+                if (fileList.length > newFiles.length) {
+                    const skipped = fileList.length - newFiles.length;
                     toast.info("Some files skipped", {
                         description: `${skipped} file(s) were skipped (unsupported format or already added)`,
                     });
                 }
                 return [...prev, ...newFiles];
             }
-            if (paths.length > 0 && m4aFiles.length === 0) {
+
+            if (fileList.length > 0 && m4aFiles.length === 0) {
                 toast.info("No new files added", {
                     description: "All files were already added or have unsupported format",
                 });
@@ -200,20 +196,15 @@ export function AudioConverterPage() {
             return prev;
         });
     }, []);
-    const handleFileDrop = useCallback(async (_x: number, _y: number, paths: string[]) => {
+    const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
         setIsDragging(false);
-        if (paths.length === 0)
-            return;
-        addFiles(paths);
+
+        const droppedFiles = Array.from(e.dataTransfer.files);
+        if (droppedFiles.length === 0) return;
+
+        addFiles(droppedFiles);
     }, [addFiles]);
-    useEffect(() => {
-        OnFileDrop((x, y, paths) => {
-            handleFileDrop(x, y, paths);
-        }, true);
-        return () => {
-            OnFileDropOff();
-        };
-    }, [handleFileDrop]);
     const removeFile = (path: string) => {
         setFiles((prev) => prev.filter((f) => f.path !== path));
     };
@@ -229,21 +220,49 @@ export function AudioConverterPage() {
         }
         setConverting(true);
         try {
-            const inputPaths = files.map((f) => f.path);
-            setFiles((prev) => prev.map((f) => {
-                if (inputPaths.includes(f.path)) {
-                    return { ...f, status: "converting" as const, error: undefined };
+            // First, upload all files to the server
+            const uploadedFiles: { file: AudioFile; serverPath: string }[] = [];
+
+            for (const audioFile of files) {
+                const formData = new FormData();
+                formData.append("file", audioFile.file);
+
+                const uploadResponse = await fetch("/api/upload-audio", {
+                    method: "POST",
+                    body: formData,
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error(`Failed to upload ${audioFile.name}`);
                 }
-                return f;
-            }));
-            const results = await ConvertAudio({
-                input_files: inputPaths,
+
+                const { file_path } = await uploadResponse.json();
+                uploadedFiles.push({ file: audioFile, serverPath: file_path });
+            }
+
+            // Update status to converting
+            setFiles((prev) => prev.map((f) => ({
+                ...f,
+                status: "converting" as const,
+                error: undefined,
+            })));
+
+            // Call the conversion API
+            const results = await convertAudio({
+                input_files: uploadedFiles.map(uf => uf.serverPath),
                 output_format: outputFormat,
                 bitrate: bitrate,
-                codec: outputFormat === "m4a" ? m4aCodec : "",
+                codec: outputFormat === "m4a" ? m4aCodec : undefined,
             });
+
+            // Update file statuses based on results
             setFiles((prev) => prev.map((f) => {
-                const result = results.find((r) => r.input_file === f.path || r.input_file.toLowerCase() === f.path.toLowerCase());
+                const uploadedFile = uploadedFiles.find(uf => uf.file.name === f.name);
+                const result = results.find((r) =>
+                    r.input_file === uploadedFile?.serverPath ||
+                    r.input_file.toLowerCase() === uploadedFile?.serverPath.toLowerCase()
+                );
+
                 if (result) {
                     return {
                         ...f,
@@ -254,14 +273,15 @@ export function AudioConverterPage() {
                 }
                 return f;
             }));
+
             const successCount = results.filter((r) => r.success).length;
             const failCount = results.filter((r) => !r.success).length;
+
             if (successCount > 0) {
                 toast.success("Conversion Complete", {
                     description: `Successfully converted ${successCount} file(s)${failCount > 0 ? `, ${failCount} failed` : ""}`,
                 });
-            }
-            else if (failCount > 0) {
+            } else if (failCount > 0) {
                 toast.error("Conversion Failed", {
                     description: `All ${failCount} file(s) failed to convert`,
                 });
@@ -271,7 +291,11 @@ export function AudioConverterPage() {
             toast.error("Conversion Error", {
                 description: err instanceof Error ? err.message : "Unknown error",
             });
-            setFiles((prev) => prev.map((f) => ({ ...f, status: "error" as const, error: "Conversion failed" })));
+            setFiles((prev) => prev.map((f) => ({
+                ...f,
+                status: "error" as const,
+                error: "Conversion failed"
+            })));
         }
         finally {
             setConverting(false);
@@ -292,6 +316,15 @@ export function AudioConverterPage() {
     const convertableCount = files.filter((f) => f.status === "pending" || f.status === "success").length;
     const successCount = files.filter((f) => f.status === "success").length;
     return (<div className={`space-y-6 ${isFullscreen ? "h-full flex flex-col" : ""}`}>
+        {/* Hidden file input */}
+        <input
+            ref={fileInputRef}
+            type="file"
+            accept=".flac,.mp3"
+            multiple
+            onChange={handleFileInputChange}
+            style={{ display: "none" }}
+        />
 
         <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold">Audio Converter</h1>
@@ -316,10 +349,7 @@ export function AudioConverterPage() {
         }} onDragLeave={(e) => {
             e.preventDefault();
             setIsDragging(false);
-        }} onDrop={(e) => {
-            e.preventDefault();
-            setIsDragging(false);
-        }} style={{ "--wails-drop-target": "drop" } as React.CSSProperties}>
+        }} onDrop={handleFileDrop}>
             {files.length === 0 ? (<>
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
                     <Upload className="h-8 w-8 text-primary"/>

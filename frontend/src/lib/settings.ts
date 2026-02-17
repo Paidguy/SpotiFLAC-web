@@ -1,4 +1,24 @@
-import { GetDefaults, LoadSettings, SaveSettings as SaveToBackend } from "../../wailsjs/go/main/App";
+// API functions for settings
+async function getDefaults(): Promise<Record<string, string>> {
+	const response = await fetch("/api/defaults");
+	if (!response.ok) throw new Error("Failed to fetch defaults");
+	return response.json();
+}
+
+async function loadSettingsFromBackend(): Promise<Record<string, any>> {
+	const response = await fetch("/api/settings");
+	if (!response.ok) throw new Error("Failed to load settings");
+	return response.json();
+}
+
+async function saveSettingsToBackend(settings: Record<string, any>): Promise<void> {
+	const response = await fetch("/api/settings", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(settings),
+	});
+	if (!response.ok) throw new Error("Failed to save settings");
+}
 export type FontFamily = "google-sans" | "inter" | "poppins" | "roboto" | "dm-sans" | "plus-jakarta-sans" | "manrope" | "space-grotesk" | "noto-sans" | "nunito-sans" | "figtree" | "raleway" | "public-sans" | "outfit" | "jetbrains-mono" | "geist-sans" | "bricolage-grotesque";
 export type FolderPreset = "none" | "artist" | "album" | "year-album" | "year-artist-album" | "artist-album" | "artist-year-album" | "artist-year-nested-album" | "album-artist" | "album-artist-album" | "album-artist-year-album" | "album-artist-year-nested-album" | "year" | "year-artist" | "custom";
 export type FilenamePreset = "title" | "title-artist" | "artist-title" | "track-title" | "track-title-artist" | "track-artist-title" | "title-album-artist" | "track-title-album-artist" | "artist-album-title" | "track-dash-title" | "disc-track-title" | "disc-track-title-artist" | "custom";
@@ -145,7 +165,7 @@ export function applyFont(fontFamily: FontFamily): void {
 }
 async function fetchDefaultPath(): Promise<string> {
     try {
-        const data = await GetDefaults();
+        const data = await getDefaults();
         return data.downloadPath || "";
     }
     catch (error) {
@@ -236,7 +256,7 @@ export function getSettings(): Settings {
 }
 export async function loadSettings(): Promise<Settings> {
     try {
-        const backendSettings = await LoadSettings();
+        const backendSettings = await loadSettingsFromBackend();
         if (backendSettings) {
             const parsed = backendSettings as any;
             if ('darkMode' in parsed && !('themeMode' in parsed)) {
@@ -318,7 +338,7 @@ export async function loadSettings(): Promise<Settings> {
     }
     const local = getSettingsFromLocalStorage();
     try {
-        await SaveToBackend(local as any);
+        await saveSettingsToBackend(local as any);
         cachedSettings = local;
     }
     catch (error) {
@@ -362,7 +382,7 @@ export async function saveSettings(settings: Settings): Promise<void> {
     try {
         cachedSettings = settings;
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-        await SaveToBackend(settings as any);
+        await saveSettingsToBackend(settings as any);
         window.dispatchEvent(new CustomEvent('settingsUpdated', { detail: settings }));
     }
     catch (error) {

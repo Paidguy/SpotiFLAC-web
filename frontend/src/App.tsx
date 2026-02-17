@@ -5,8 +5,6 @@ import { Search, X, ArrowUp } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getSettings, getSettingsWithDefaults, loadSettings, saveSettings, applyThemeMode, applyFont, updateSettings } from "@/lib/settings";
 import { applyTheme } from "@/lib/themes";
-import { OpenFolder, CheckFFmpegInstalled, DownloadFFmpeg } from "../wailsjs/go/main/App";
-import { EventsOn, EventsOff, Quit } from "../wailsjs/runtime/runtime";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { TitleBar } from "@/components/TitleBar";
 import { Sidebar, type PageType } from "@/components/Sidebar";
@@ -90,8 +88,12 @@ function App() {
         initSettings();
         const checkFFmpeg = async () => {
             try {
-                const installed = await CheckFFmpegInstalled();
-                setIsFFmpegInstalled(installed);
+                const response = await fetch('/api/ffmpeg/installed');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                setIsFFmpegInstalled(data.installed);
             }
             catch (err) {
                 console.error("Failed to check FFmpeg:", err);
@@ -99,6 +101,26 @@ function App() {
             }
         };
         checkFFmpeg();
+
+        // Setup persistent SSE connection for download progress
+        const eventSource = new EventSource('/api/events');
+
+        eventSource.addEventListener('download:progress', (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Download progress SSE event:', data);
+                // The event data will be: {type, item_id, status, percent, speed, message}
+                // Download queue components can listen to this via polling or context
+            } catch (err) {
+                console.error('Failed to parse download progress event:', err);
+            }
+        });
+
+        eventSource.onerror = (error) => {
+            console.error('SSE connection error:', error);
+            // EventSource will auto-reconnect
+        };
+
         const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
         const handleChange = () => {
             const currentSettings = getSettings();
@@ -117,6 +139,9 @@ function App() {
         return () => {
             mediaQuery.removeEventListener("change", handleChange);
             window.removeEventListener("scroll", handleScroll);
+            if (eventSource) {
+                eventSource.close();
+            }
         };
     }, []);
     const handleEnableSpotFetchApi = async () => {
@@ -174,28 +199,47 @@ function App() {
         setIsInstallingFFmpeg(true);
         setFfmpegInstallProgress(0);
         setFfmpegInstallStatus("starting");
+
+        let eventSource: EventSource | null = null;
+
         try {
-            EventsOn("ffmpeg:progress", (progress: number) => {
+            // Setup SSE connection for progress updates
+            eventSource = new EventSource('/api/events');
+
+            eventSource.addEventListener('ffmpeg:progress', (event) => {
+                const progress = parseFloat(event.data);
                 setFfmpegInstallProgress(progress);
                 if (progress >= 100) {
                     setFfmpegInstallStatus("extracting");
-                }
-                else {
+                } else {
                     setFfmpegInstallStatus("downloading");
                 }
             });
-            EventsOn("ffmpeg:status", (status: string) => {
-                setFfmpegInstallStatus(status);
+
+            eventSource.addEventListener('ffmpeg:status', (event) => {
+                setFfmpegInstallStatus(event.data);
             });
-            const response = await DownloadFFmpeg();
-            EventsOff("ffmpeg:progress");
-            EventsOff("ffmpeg:status");
-            if (response.success) {
+
+            eventSource.onerror = (error) => {
+                console.error("SSE connection error:", error);
+            };
+
+            // Start the download
+            const response = await fetch('/api/ffmpeg/download', {
+                method: 'POST',
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
                 toast.success("FFmpeg installed successfully!");
                 setIsFFmpegInstalled(true);
-            }
-            else {
-                toast.error(`Failed to install FFmpeg: ${response.error}`);
+            } else {
+                toast.error(`Failed to install FFmpeg: ${result.error}`);
             }
         }
         catch (error) {
@@ -203,6 +247,9 @@ function App() {
             toast.error(`Error during FFmpeg installation: ${error}`);
         }
         finally {
+            if (eventSource) {
+                eventSource.close();
+            }
             setIsInstallingFFmpeg(false);
             setFfmpegInstallProgress(0);
             setFfmpegInstallStatus("");
@@ -323,7 +370,22 @@ function App() {
             return;
         }
         try {
-            await OpenFolder(settings.downloadPath);
+            const response = await fetch('/api/files/open', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ path: settings.downloadPath }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            if (!result.success) {
+                toast.error(`Failed to open folder: ${result.error || 'Unknown error'}`);
+            }
         }
         catch (error) {
             console.error("Error opening folder:", error);
@@ -558,7 +620,7 @@ function App() {
                         </div>)}
 
                     <DialogFooter className="flex-row gap-3 pt-2">
-                        {!isInstallingFFmpeg && (<Button variant="outline" className="flex-1 h-11 text-sm font-bold transition-colors" onClick={() => Quit()}>
+                        {!isInstallingFFmpeg && (<Button variant="outline" className="flex-1 h-11 text-sm font-bold transition-colors" onClick={() => window.close()}>
                                 Exit
                             </Button>)}
                         <Button className={`${isInstallingFFmpeg ? 'w-full' : 'flex-1'} h-11 text-sm font-bold shadow-lg shadow-primary/10`} onClick={handleInstallFFmpeg} disabled={isInstallingFFmpeg}>

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { Trash2, Copy, Check, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logger, type LogEntry } from "@/lib/logger";
-import { ExportFailedDownloads } from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 const levelColors: Record<string, string> = {
     info: "text-blue-500",
@@ -55,7 +54,11 @@ export function DebugLoggerPage() {
     };
     const handleExportFailed = async () => {
         try {
-            const message = await ExportFailedDownloads();
+            const response = await fetch('/api/export-failed');
+            if (!response.ok) {
+                throw new Error(`Failed to export failed downloads: ${response.statusText}`);
+            }
+            const message = await response.text();
             if (message.startsWith("Successfully")) {
                 toast.success(message);
             }

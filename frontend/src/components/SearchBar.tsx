@@ -6,12 +6,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger, } from "@/components/ui/tooltip";
 import { FetchHistory } from "@/components/FetchHistory";
 import type { HistoryItem } from "@/components/FetchHistory";
-import { SearchSpotify, SearchSpotifyByType } from "../../wailsjs/go/main/App";
-import { backend } from "../../wailsjs/go/models";
 import { cn } from "@/lib/utils";
 import { useTypingEffect } from "@/hooks/useTypingEffect";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, } from "@/components/ui/dialog";
+import type { SearchResponse, SearchRequest, SearchByTypeRequest, SearchTrack, SearchAlbum, SearchArtist, SearchPlaylist } from "@/types/api";
 const FETCH_PLACEHOLDERS = [
     "https://open.spotify.com/track/...",
     "https://open.spotify.com/album/...",
@@ -243,7 +242,7 @@ interface SearchBarProps {
 }
 export function SearchBar({ url, loading, onUrlChange, onFetch, onFetchUrl, history, onHistorySelect, onHistoryRemove, hasResult, searchMode, onSearchModeChange, region, onRegionChange, }: SearchBarProps) {
     const [searchQuery, setSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<backend.SearchResponse | null>(null);
+    const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [lastSearchedQuery, setLastSearchedQuery] = useState("");
@@ -312,10 +311,22 @@ export function SearchBar({ url, loading, onUrlChange, onFetch, onFetchUrl, hist
         searchTimeoutRef.current = setTimeout(async () => {
             setIsSearching(true);
             try {
-                const results = await SearchSpotify({
-                    query: searchQuery,
-                    limit: SEARCH_LIMIT,
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: searchQuery,
+                        limit: SEARCH_LIMIT,
+                    } as SearchRequest),
                 });
+
+                if (!response.ok) {
+                    throw new Error(`Search failed: ${response.statusText}`);
+                }
+
+                const results: SearchResponse = await response.json();
                 setSearchResults(results);
                 setLastSearchedQuery(searchQuery.trim());
                 saveRecentSearch(searchQuery.trim());
@@ -360,30 +371,43 @@ export function SearchBar({ url, loading, onUrlChange, onFetch, onFetchUrl, hist
         const currentCount = getTabCount(activeTab);
         setIsLoadingMore(true);
         try {
-            const moreResults = await SearchSpotifyByType({
-                query: lastSearchedQuery,
-                search_type: typeMap[activeTab],
-                limit: SEARCH_LIMIT,
-                offset: currentCount,
+            const response = await fetch('/api/search-by-type', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    query: lastSearchedQuery,
+                    search_type: typeMap[activeTab],
+                    limit: SEARCH_LIMIT,
+                    offset: currentCount,
+                } as SearchByTypeRequest),
             });
+
+            if (!response.ok) {
+                throw new Error(`Search by type failed: ${response.statusText}`);
+            }
+
+            const moreResults: (SearchTrack | SearchAlbum | SearchArtist | SearchPlaylist)[] = await response.json();
+
             if (moreResults.length > 0) {
                 setSearchResults((prev) => {
                     if (!prev)
                         return prev;
-                    const updated = new backend.SearchResponse({
+                    const updated: SearchResponse = {
                         tracks: activeTab === "tracks"
-                            ? [...prev.tracks, ...moreResults]
+                            ? [...prev.tracks, ...(moreResults as SearchTrack[])]
                             : prev.tracks,
                         albums: activeTab === "albums"
-                            ? [...prev.albums, ...moreResults]
+                            ? [...prev.albums, ...(moreResults as SearchAlbum[])]
                             : prev.albums,
                         artists: activeTab === "artists"
-                            ? [...prev.artists, ...moreResults]
+                            ? [...prev.artists, ...(moreResults as SearchArtist[])]
                             : prev.artists,
                         playlists: activeTab === "playlists"
-                            ? [...prev.playlists, ...moreResults]
+                            ? [...prev.playlists, ...(moreResults as SearchPlaylist[])]
                             : prev.playlists,
-                    });
+                    };
                     return updated;
                 });
             }

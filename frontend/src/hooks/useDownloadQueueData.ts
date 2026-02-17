@@ -1,8 +1,37 @@
 import { useEffect, useState } from "react";
-import { GetDownloadQueue } from "../../wailsjs/go/main/App";
-import { backend } from "../../wailsjs/go/models";
+
+type DownloadStatus = "queued" | "downloading" | "completed" | "failed" | "skipped";
+
+interface DownloadItem {
+    id: string;
+    track_name: string;
+    artist_name: string;
+    album_name: string;
+    spotify_id: string;
+    status: DownloadStatus;
+    progress: number;
+    total_size: number;
+    speed: number;
+    start_time: number;
+    end_time: number;
+    error_message: string;
+    file_path: string;
+}
+
+interface DownloadQueueInfo {
+    is_downloading: boolean;
+    queue: DownloadItem[];
+    current_speed: number;
+    total_downloaded: number;
+    session_start_time: number;
+    queued_count: number;
+    completed_count: number;
+    failed_count: number;
+    skipped_count: number;
+}
+
 export function useDownloadQueueData() {
-    const [queueInfo, setQueueInfo] = useState<backend.DownloadQueueInfo>(new backend.DownloadQueueInfo({
+    const [queueInfo, setQueueInfo] = useState<DownloadQueueInfo>({
         is_downloading: false,
         queue: [],
         current_speed: 0,
@@ -12,11 +41,15 @@ export function useDownloadQueueData() {
         completed_count: 0,
         failed_count: 0,
         skipped_count: 0,
-    }));
+    });
     useEffect(() => {
         const fetchQueue = async () => {
             try {
-                const info = await GetDownloadQueue();
+                const response = await fetch("/api/download-queue");
+                if (!response.ok) {
+                    throw new Error("Failed to get download queue");
+                }
+                const info = await response.json();
                 setQueueInfo(info);
             }
             catch (error) {

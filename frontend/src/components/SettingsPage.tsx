@@ -10,7 +10,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Switch } from "@/components/ui/switch";
 import { getSettings, getSettingsWithDefaults, saveSettings, resetToDefaultSettings, applyThemeMode, applyFont, FONT_OPTIONS, FOLDER_PRESETS, FILENAME_PRESETS, TEMPLATE_VARIABLES, type Settings as SettingsType, type FontFamily, type FolderPreset, type FilenamePreset, } from "@/lib/settings";
 import { themes, applyTheme } from "@/lib/themes";
-import { SelectFolder } from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 const TidalIcon = ({ className }: {
     className?: string;
@@ -104,15 +103,21 @@ export function SettingsPage({ onUnsavedChangesChange, onResetRequest, }: Settin
         toast.success("Settings reset to default");
     };
     const handleBrowseFolder = async () => {
+        // In web mode, show the server's download path as read-only
         try {
-            const selectedPath = await SelectFolder(tempSettings.downloadPath || "");
-            if (selectedPath && selectedPath.trim() !== "") {
-                setTempSettings((prev) => ({ ...prev, downloadPath: selectedPath }));
+            const response = await fetch('/api/download-path');
+            if (response.ok) {
+                const data = await response.json();
+                toast.info("Server Download Path", {
+                    description: `Current server path: ${data.path}`
+                });
+            } else {
+                toast.error("Failed to get server download path");
             }
         }
         catch (error) {
-            console.error("Error selecting folder:", error);
-            toast.error(`Error selecting folder: ${error}`);
+            console.error("Error fetching download path:", error);
+            toast.error(`Error fetching download path: ${error}`);
         }
     };
     const handleTidalQualityChange = async (value: "LOSSLESS" | "HI_RES_LOSSLESS") => {
@@ -160,10 +165,10 @@ export function SettingsPage({ onUnsavedChangesChange, onResetRequest, }: Settin
                   <InputWithContext id="download-path" value={tempSettings.downloadPath} onChange={(e) => setTempSettings((prev) => ({
                 ...prev,
                 downloadPath: e.target.value,
-            }))} placeholder="C:\Users\YourUsername\Music"/>
+            }))} placeholder="Server-managed download path" disabled/>
                   <Button type="button" onClick={handleBrowseFolder} className="gap-1.5">
                     <FolderOpen className="h-4 w-4"/>
-                    Browse
+                    View Path
                   </Button>
                 </div>
               </div>

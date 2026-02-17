@@ -35,9 +35,32 @@ interface FileExistenceResult {
     track_name?: string;
     artist_name?: string;
 }
-const CheckFilesExistence = (outputDir: string, rootDir: string, tracks: CheckFileExistenceRequest[]): Promise<FileExistenceResult[]> => (window as any)["go"]["main"]["App"]["CheckFilesExistence"](outputDir, rootDir, tracks);
-const SkipDownloadItem = (itemID: string, filePath: string): Promise<void> => (window as any)["go"]["main"]["App"]["SkipDownloadItem"](itemID, filePath);
-const CreateM3U8File = (playlistName: string, outputDir: string, filePaths: string[]): Promise<void> => (window as any)["go"]["main"]["App"]["CreateM3U8File"](playlistName, outputDir, filePaths);
+// API functions for file operations
+const CheckFilesExistence = async (outputDir: string, rootDir: string, tracks: CheckFileExistenceRequest[]): Promise<FileExistenceResult[]> => {
+	const response = await fetch("/api/check-files-existence", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ output_dir: outputDir, root_dir: rootDir, tracks }),
+	});
+	if (!response.ok) throw new Error("Failed to check file existence");
+	return response.json();
+};
+
+const SkipDownloadItem = async (itemID: string, filePath: string): Promise<void> => {
+	const response = await fetch(`/api/skip-item?item_id=${encodeURIComponent(itemID)}&file_path=${encodeURIComponent(filePath)}`, {
+		method: "POST",
+	});
+	if (!response.ok) throw new Error("Failed to skip download item");
+};
+
+const CreateM3U8File = async (playlistName: string, outputDir: string, filePaths: string[]): Promise<void> => {
+	const response = await fetch("/api/create-m3u8", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ m3u8_name: playlistName, output_dir: outputDir, file_paths: filePaths }),
+	});
+	if (!response.ok) throw new Error("Failed to create M3U8 file");
+};
 export function useDownload(region: string) {
     const [downloadProgress, setDownloadProgress] = useState<number>(0);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -113,7 +136,6 @@ export function useDownload(region: string) {
             }
         }
         const serviceForCheck = service === "auto" ? "flac" : (service === "tidal" ? "flac" : (service === "qobuz" ? "flac" : "flac"));
-        let fileExists = false;
         if (trackName && artistName) {
             try {
                 const checkRequest: CheckFileExistenceRequest = {
@@ -133,7 +155,6 @@ export function useDownload(region: string) {
                 };
                 const existenceResults = await CheckFilesExistence(outputDir, settings.downloadPath, [checkRequest]);
                 if (existenceResults.length > 0 && existenceResults[0].exists) {
-                    fileExists = true;
                     return {
                         success: true,
                         message: "File already exists",
@@ -146,18 +167,14 @@ export function useDownload(region: string) {
                 console.warn("File existence check failed:", err);
             }
         }
-        const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
-        let itemID: string | undefined;
-        if (!fileExists) {
-            itemID = await AddToDownloadQueue(id, trackName || "", displayArtist || "", albumName || "");
-        }
         if (service === "auto") {
             let streamingURLs: any = null;
             if (spotifyId) {
                 try {
-                    const { GetStreamingURLs } = await import("../../wailsjs/go/main/App");
-                    const urlsJson = await GetStreamingURLs(spotifyId, region);
-                    streamingURLs = JSON.parse(urlsJson);
+                    const response = await fetch(`/api/streaming-urls?spotify_track_id=${encodeURIComponent(spotifyId)}&region=${encodeURIComponent(region)}`);
+                    if (response.ok) {
+                        streamingURLs = await response.json();
+                    }
                 }
                 catch (err) {
                     console.error("Failed to get streaming URLs:", err);
@@ -192,7 +209,6 @@ export function useDownload(region: string) {
                             embed_max_quality_cover: settings.embedMaxQualityCover,
                             service_url: streamingURLs.tidal_url,
                             duration: durationSeconds,
-                            item_id: itemID,
                             audio_format: tidalQuality,
                             spotify_track_number: spotifyTrackNumber,
                             spotify_disc_number: spotifyDiscNumber,
@@ -235,7 +251,6 @@ export function useDownload(region: string) {
                             embed_lyrics: settings.embedLyrics,
                             embed_max_quality_cover: settings.embedMaxQualityCover,
                             service_url: streamingURLs.amazon_url,
-                            item_id: itemID,
                             spotify_track_number: spotifyTrackNumber,
                             spotify_disc_number: spotifyDiscNumber,
                             spotify_total_tracks: spotifyTotalTracks,
@@ -275,7 +290,6 @@ export function useDownload(region: string) {
                             spotify_id: spotifyId,
                             embed_lyrics: settings.embedLyrics,
                             embed_max_quality_cover: settings.embedMaxQualityCover,
-                            item_id: itemID,
                             audio_format: qobuzQuality,
                             spotify_track_number: spotifyTrackNumber,
                             spotify_disc_number: spotifyDiscNumber,
@@ -296,10 +310,6 @@ export function useDownload(region: string) {
                         lastResponse = { success: false, error: String(err) };
                     }
                 }
-            }
-            if (itemID) {
-                const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-                await MarkDownloadItemFailed(itemID, lastResponse.error || "All services failed");
             }
             return lastResponse;
         }
@@ -329,7 +339,6 @@ export function useDownload(region: string) {
             embed_lyrics: settings.embedLyrics,
             embed_max_quality_cover: settings.embedMaxQualityCover,
             duration: durationSecondsForFallback,
-            item_id: itemID,
             audio_format: audioFormat,
             spotify_track_number: spotifyTrackNumber,
             spotify_disc_number: spotifyDiscNumber,
@@ -338,10 +347,6 @@ export function useDownload(region: string) {
             copyright: copyright,
             publisher: publisher,
         });
-        if (!singleServiceResponse.success && itemID) {
-            const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-            await MarkDownloadItemFailed(itemID, singleServiceResponse.error || "Download failed");
-        }
         return singleServiceResponse;
     };
     const downloadWithItemID = async (settings: any, itemID: string, trackName?: string, artistName?: string, albumName?: string, folderName?: string, position?: number, spotifyId?: string, durationMs?: number, isAlbum?: boolean, releaseYear?: string, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number, spotifyTotalDiscs?: number, copyright?: string, publisher?: string) => {
@@ -406,9 +411,10 @@ export function useDownload(region: string) {
             let streamingURLs: any = null;
             if (spotifyId) {
                 try {
-                    const { GetStreamingURLs } = await import("../../wailsjs/go/main/App");
-                    const urlsJson = await GetStreamingURLs(spotifyId, region);
-                    streamingURLs = JSON.parse(urlsJson);
+                    const response = await fetch(`/api/streaming-urls?spotify_track_id=${encodeURIComponent(spotifyId)}&region=${encodeURIComponent(region)}`);
+                    if (response.ok) {
+                        streamingURLs = await response.json();
+                    }
                 }
                 catch (err) {
                     console.error("Failed to get streaming URLs:", err);
@@ -542,10 +548,6 @@ export function useDownload(region: string) {
                     }
                 }
             }
-            if (!lastResponse.success && itemID) {
-                const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-                await MarkDownloadItemFailed(itemID, lastResponse.error || "All services failed");
-            }
             return lastResponse;
         }
         const durationSecondsForFallback = durationMs ? Math.round(durationMs / 1000) : undefined;
@@ -583,10 +585,6 @@ export function useDownload(region: string) {
             copyright: copyright,
             publisher: publisher,
         });
-        if (!singleServiceResponse.success && itemID) {
-            const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-            await MarkDownloadItemFailed(itemID, singleServiceResponse.error || "Download failed");
-        }
         return singleServiceResponse;
     };
     const handleDownloadTrack = async (id: string, trackName?: string, artistName?: string, albumName?: string, spotifyId?: string, playlistName?: string, durationMs?: number, position?: number, albumArtist?: string, releaseDate?: string, coverUrl?: string, spotifyTrackNumber?: number, spotifyDiscNumber?: number, spotifyTotalTracks?: number, spotifyTotalDiscs?: number, copyright?: string, publisher?: string) => {
@@ -682,15 +680,16 @@ export function useDownload(region: string) {
             }
         }
         logger.info(`found ${existingSpotifyIDs.size} existing files`);
-        const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
+
+        // Generate item IDs for tracking purposes
         const itemIDs: string[] = [];
         for (const id of selectedTracks) {
             const track = allTracks.find((t) => t.spotify_id === id);
             if (!track)
                 continue;
             const trackID = track.spotify_id || id;
-            const displayArtist = settings.useFirstArtistOnly && track.artists ? getFirstArtist(track.artists) : track.artists;
-            const itemID = await AddToDownloadQueue(trackID, track.name || "", displayArtist || "", track.album_name || "");
+            // Generate a unique item ID for client-side tracking
+            const itemID = `${trackID}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             itemIDs.push(itemID);
             if (existingSpotifyIDs.has(trackID)) {
                 const filePath = existingFilePaths.get(trackID) || "";
@@ -754,10 +753,6 @@ export function useDownload(region: string) {
                 errorCount++;
                 logger.error(`error: ${track.name} - ${err}`);
                 setFailedTracks((prev) => new Set(prev).add(id));
-                if (itemID) {
-                    const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-                    await MarkDownloadItemFailed(itemID, err instanceof Error ? err.message : String(err));
-                }
             }
             const completedCount = skippedCount + successCount + errorCount;
             setDownloadProgress(Math.min(100, Math.round((completedCount / total) * 100)));
@@ -767,8 +762,14 @@ export function useDownload(region: string) {
         setIsDownloading(false);
         setBulkDownloadType(null);
         shouldStopDownloadRef.current = false;
-        const { CancelAllQueuedItems } = await import("../../wailsjs/go/main/App");
-        await CancelAllQueuedItems();
+
+        // Cancel any queued items on the server
+        try {
+            await fetch("/api/cancel-queued", { method: "POST" });
+        } catch (err) {
+            console.error("Failed to cancel queued items:", err);
+        }
+
         if (settings.createM3u8File && folderName) {
             const paths = selectedTrackObjects.map((t) => finalFilePaths.get(t.spotify_id || "") || "").filter((p) => p !== "");
             if (paths.length > 0) {
@@ -855,13 +856,14 @@ export function useDownload(region: string) {
             }
         }
         logger.info(`found ${existingSpotifyIDs.size} existing files`);
-        const { AddToDownloadQueue } = await import("../../wailsjs/go/main/App");
+
+        // Generate item IDs for tracking purposes
         const itemIDs: string[] = [];
         for (const track of tracksWithId) {
-            const displayArtist = settings.useFirstArtistOnly && track.artists ? getFirstArtist(track.artists) : track.artists;
-            const itemID = await AddToDownloadQueue(track.spotify_id || "", track.name || "", displayArtist || "", track.album_name || "");
-            itemIDs.push(itemID);
             const trackID = track.spotify_id || "";
+            // Generate a unique item ID for client-side tracking
+            const itemID = `${trackID}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            itemIDs.push(itemID);
             if (existingSpotifyIDs.has(trackID)) {
                 const filePath = existingFilePaths.get(trackID) || "";
                 setTimeout(() => SkipDownloadItem(itemID, filePath), 10);
@@ -923,8 +925,6 @@ export function useDownload(region: string) {
                 errorCount++;
                 logger.error(`error: ${track.name} - ${err}`);
                 setFailedTracks((prev) => new Set(prev).add(trackId));
-                const { MarkDownloadItemFailed } = await import("../../wailsjs/go/main/App");
-                await MarkDownloadItemFailed(itemID, err instanceof Error ? err.message : String(err));
             }
             const completedCount = skippedCount + successCount + errorCount;
             setDownloadProgress(Math.min(100, Math.round((completedCount / total) * 100)));
@@ -934,8 +934,14 @@ export function useDownload(region: string) {
         setIsDownloading(false);
         setBulkDownloadType(null);
         shouldStopDownloadRef.current = false;
-        const { CancelAllQueuedItems: CancelQueued } = await import("../../wailsjs/go/main/App");
-        await CancelQueued();
+
+        // Cancel any queued items on the server
+        try {
+            await fetch("/api/cancel-queued", { method: "POST" });
+        } catch (err) {
+            console.error("Failed to cancel queued items:", err);
+        }
+
         if (settings.createM3u8File && folderName) {
             try {
                 logger.info(`creating m3u8 playlist: ${folderName}`);

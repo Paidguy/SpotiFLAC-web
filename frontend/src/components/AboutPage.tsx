@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { openExternal } from "@/lib/utils";
-import { GetOSInfo } from "../../wailsjs/go/main/App";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -38,8 +37,13 @@ export function AboutPage({ version }: AboutPageProps) {
     useEffect(() => {
         const fetchOS = async () => {
             try {
-                const info = await GetOSInfo();
-                setOs(info);
+                const response = await fetch('/api/os-info');
+                if (response.ok) {
+                    const info = await response.text();
+                    setOs(info);
+                } else {
+                    throw new Error('Failed to fetch OS info');
+                }
             }
             catch (err) {
                 const userAgent = window.navigator.userAgent;

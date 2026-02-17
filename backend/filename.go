@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-func BuildExpectedFilename(trackName, artistName, albumName, albumArtist, releaseDate, filenameFormat, playlistName, playlistOwner string, includeTrackNumber bool, position, discNumber int, useAlbumTrackNumber bool) string {
+func BuildExpectedFilename(trackName, artistName, albumName, albumArtist, releaseDate, filenameFormat, playlistName, playlistOwner string, includeTrackNumber bool, position, discNumber int, useAlbumTrackNumber bool, format string) string {
 
 	safeTitle := SanitizeFilename(trackName)
 	safeArtist := SanitizeFilename(artistName)
@@ -66,7 +66,12 @@ func BuildExpectedFilename(trackName, artistName, albumName, albumArtist, releas
 		}
 	}
 
-	return filename + ".flac"
+	// Use provided format or default to flac
+	if format == "" {
+		format = "flac"
+	}
+
+	return filename + "." + format
 }
 
 func SanitizeFilename(name string) string {
@@ -168,6 +173,5 @@ func SanitizeFolderPath(folderPath string) string {
 
 func sanitizeFolderName(name string) string { return SanitizeFilename(name) }
 
-func sanitizeFilename(name string) string {
-	return SanitizeFilename(name)
-}
+// sanitizeFilename is an alias for SanitizeFilename for backward compatibility
+func sanitizeFilename(name string) string { return SanitizeFilename(name) }
