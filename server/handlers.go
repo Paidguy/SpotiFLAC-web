@@ -226,8 +226,26 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 		})
 	}
 
-	// SECURITY: Override client's output directory with server's configured path
-	req.OutputDir = s.downloadPath
+	// SECURITY: Validate and sanitize output directory
+	// The frontend calculates OutputDir with folder templates applied.
+	// We must ensure it's within the allowed downloadPath boundary.
+	if req.OutputDir != "" {
+		// Check if the requested path is within our download path
+		absRequested, err := filepath.Abs(req.OutputDir)
+		if err != nil {
+			// If we can't resolve the path, use default
+			req.OutputDir = s.downloadPath
+		} else {
+			absDownloadPath, err := filepath.Abs(s.downloadPath)
+			if err != nil || !strings.HasPrefix(absRequested, absDownloadPath) {
+				// Path is outside allowed boundary or can't be validated - use default
+				req.OutputDir = s.downloadPath
+			}
+			// Otherwise, keep the client's OutputDir (which includes folder template)
+		}
+	} else {
+		req.OutputDir = s.downloadPath
+	}
 
 	if req.Service == "qobuz" && req.SpotifyID == "" {
 		return c.JSON(http.StatusBadRequest, DownloadResponse{
@@ -240,10 +258,6 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 		req.Service = "tidal"
 	}
 
-	if req.OutputDir == "" {
-		req.OutputDir = s.downloadPath
-	}
-
 	if req.AudioFormat == "" {
 		req.AudioFormat = "flac"
 	}
@@ -252,8 +266,9 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 		req.FilenameFormat = "{track_number}. {track_name}"
 	}
 
-	// Apply folder template if needed from settings
-	// The actual folder creation logic should be in backend
+	// Folder template is applied by the frontend in useDownload.ts
+	// The frontend calculates the full OutputDir path with templates applied
+	// and we validate it's within the download path boundary above
 
 	// Handle first artist only if requested
 	if req.UseFirstArtistOnly && req.ArtistName != "" {
