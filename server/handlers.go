@@ -1031,11 +1031,11 @@ func (s *Server) HandleGetFFmpegPath(c echo.Context) error {
 }
 
 // HandleDownloadFFmpeg downloads FFmpeg
+// Note: FFmpeg download is not supported in web server mode - users should install it on the server host
 func (s *Server) HandleDownloadFFmpeg(c echo.Context) error {
-	// This is a placeholder - actual implementation depends on backend
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusNotImplemented, map[string]interface{}{
 		"success": false,
-		"message": "FFmpeg download not implemented for web server",
+		"message": "FFmpeg download is not supported in web server mode. Please install FFmpeg on your server: https://ffmpeg.org/download.html",
 	})
 }
 
@@ -1280,10 +1280,10 @@ func (s *Server) HandleCheckFilesExistence(c echo.Context) error {
 			track.Position,
 			track.DiscNumber,
 			track.UseAlbumTrackNumber,
+			track.Format, // Now passing format parameter
 		)
 
-		// Add extension
-		filename += "." + track.Format
+		// Extension is now handled by BuildExpectedFilename
 
 		filePath := filepath.Join(req.OutputDir, filename)
 		if req.RootDir != "" {
@@ -1304,18 +1304,15 @@ func (s *Server) HandleCheckFilesExistence(c echo.Context) error {
 }
 
 // HandleCreateM3U8File creates an M3U8 playlist file
+// Note: This feature is not supported in web server mode as it requires local file system access
 func (s *Server) HandleCreateM3U8File(c echo.Context) error {
 	var req M3U8Request
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	// SECURITY: Override output directory with server's configured path
-	req.OutputDir = s.downloadPath
-
-	// TODO: Implement M3U8 creation - not currently in backend
 	return c.JSON(http.StatusNotImplemented, map[string]string{
-		"error": "M3U8 playlist creation not yet implemented",
+		"error": "M3U8 playlist creation is not supported in web server mode",
 	})
 }
 
