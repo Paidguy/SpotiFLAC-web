@@ -35,9 +35,32 @@ interface FileExistenceResult {
     track_name?: string;
     artist_name?: string;
 }
-const CheckFilesExistence = (outputDir: string, rootDir: string, tracks: CheckFileExistenceRequest[]): Promise<FileExistenceResult[]> => (window as any)["go"]["main"]["App"]["CheckFilesExistence"](outputDir, rootDir, tracks);
-const SkipDownloadItem = (itemID: string, filePath: string): Promise<void> => (window as any)["go"]["main"]["App"]["SkipDownloadItem"](itemID, filePath);
-const CreateM3U8File = (playlistName: string, outputDir: string, filePaths: string[]): Promise<void> => (window as any)["go"]["main"]["App"]["CreateM3U8File"](playlistName, outputDir, filePaths);
+// API functions for file operations
+const CheckFilesExistence = async (outputDir: string, rootDir: string, tracks: CheckFileExistenceRequest[]): Promise<FileExistenceResult[]> => {
+	const response = await fetch("/api/check-files-existence", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ output_dir: outputDir, root_dir: rootDir, tracks }),
+	});
+	if (!response.ok) throw new Error("Failed to check file existence");
+	return response.json();
+};
+
+const SkipDownloadItem = async (itemID: string, filePath: string): Promise<void> => {
+	const response = await fetch(`/api/skip-item?item_id=${encodeURIComponent(itemID)}&file_path=${encodeURIComponent(filePath)}`, {
+		method: "POST",
+	});
+	if (!response.ok) throw new Error("Failed to skip download item");
+};
+
+const CreateM3U8File = async (playlistName: string, outputDir: string, filePaths: string[]): Promise<void> => {
+	const response = await fetch("/api/create-m3u8", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ m3u8_name: playlistName, output_dir: outputDir, file_paths: filePaths }),
+	});
+	if (!response.ok) throw new Error("Failed to create M3U8 file");
+};
 export function useDownload(region: string) {
     const [downloadProgress, setDownloadProgress] = useState<number>(0);
     const [isDownloading, setIsDownloading] = useState(false);

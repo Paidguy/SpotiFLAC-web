@@ -1,11 +1,11 @@
 import path from "path";
-import fs from "fs";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-const wailsJsonPath = path.resolve(__dirname, "../wails.json");
-const wailsJson = JSON.parse(fs.readFileSync(wailsJsonPath, "utf-8"));
-const appVersion = wailsJson.info.productVersion;
+
+// Use version from package.json or a default
+const appVersion = "7.0.9";
+
 export default defineConfig({
     plugins: [react(), tailwindcss()],
     resolve: {
@@ -15,5 +15,13 @@ export default defineConfig({
     },
     define: {
         __APP_VERSION__: JSON.stringify(appVersion),
+    },
+    server: {
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8080',
+                changeOrigin: true,
+            },
+        },
     },
 });

@@ -1,0 +1,27 @@
+# Build artifacts
+node_modules/
+frontend/dist/
+frontend/node_modules/
+
+# Downloads and data
+downloads/
+data/
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
