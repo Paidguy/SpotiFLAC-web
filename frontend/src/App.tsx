@@ -101,6 +101,26 @@ function App() {
             }
         };
         checkFFmpeg();
+
+        // Setup persistent SSE connection for download progress
+        const eventSource = new EventSource('/api/events');
+
+        eventSource.addEventListener('download:progress', (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Download progress SSE event:', data);
+                // The event data will be: {type, item_id, status, percent, speed, message}
+                // Download queue components can listen to this via polling or context
+            } catch (err) {
+                console.error('Failed to parse download progress event:', err);
+            }
+        });
+
+        eventSource.onerror = (error) => {
+            console.error('SSE connection error:', error);
+            // EventSource will auto-reconnect
+        };
+
         const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
         const handleChange = () => {
             const currentSettings = getSettings();
@@ -119,6 +139,9 @@ function App() {
         return () => {
             mediaQuery.removeEventListener("change", handleChange);
             window.removeEventListener("scroll", handleScroll);
+            if (eventSource) {
+                eventSource.close();
+            }
         };
     }, []);
     const handleEnableSpotFetchApi = async () => {

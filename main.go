@@ -9,6 +9,7 @@ import (
 	"os"
 	"spotiflac/backend"
 	"spotiflac/server"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -161,14 +162,30 @@ func main() {
 	// Server-Sent Events for real-time progress
 	api.GET("/events", srv.HandleSSE)
 
-	// Serve embedded frontend static files
+	// Serve embedded frontend static files with SPA fallback
 	frontendFS, err := fs.Sub(frontendDist, "frontend/dist")
 	if err != nil {
 		log.Fatalf("Failed to get frontend filesystem: %v", err)
 	}
 
-	// Serve static files
-	e.GET("/*", echo.WrapHandler(http.FileServer(http.FS(frontendFS))))
+	// Custom handler for SPA routing
+	e.GET("/*", func(c echo.Context) error {
+		path := c.Request().URL.Path
+
+		// Try to serve the requested file
+		f, err := frontendFS.Open(strings.TrimPrefix(path, "/"))
+		if err == nil {
+			// File exists, serve it
+			f.Close()
+			http.FileServer(http.FS(frontendFS)).ServeHTTP(c.Response(), c.Request())
+			return nil
+		}
+
+		// File doesn't exist - return index.html for SPA routing
+		c.Request().URL.Path = "/"
+		http.FileServer(http.FS(frontendFS)).ServeHTTP(c.Response(), c.Request())
+		return nil
+	})
 
 	// Start server
 	address := fmt.Sprintf(":%s", port)

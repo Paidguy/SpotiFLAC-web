@@ -49,7 +49,25 @@ var (
 	totalDownloadedLock sync.RWMutex
 	sessionStartTime    int64
 	sessionStartLock    sync.RWMutex
+
+	// Global progress callback for SSE broadcasting
+	globalProgressCallback     func(itemID string, mbDownloaded, speedMBps float64)
+	globalProgressCallbackLock sync.RWMutex
 )
+
+// SetGlobalProgressCallback sets the callback for progress updates
+func SetGlobalProgressCallback(callback func(itemID string, mbDownloaded, speedMBps float64)) {
+	globalProgressCallbackLock.Lock()
+	globalProgressCallback = callback
+	globalProgressCallbackLock.Unlock()
+}
+
+// GetGlobalProgressCallback gets the current progress callback
+func GetGlobalProgressCallback() func(itemID string, mbDownloaded, speedMBps float64) {
+	globalProgressCallbackLock.RLock()
+	defer globalProgressCallbackLock.RUnlock()
+	return globalProgressCallback
+}
 
 type ProgressInfo struct {
 	IsDownloading bool    `json:"is_downloading"`
@@ -114,31 +132,49 @@ func SetDownloading(downloading bool) {
 }
 
 type ProgressWriter struct {
-	writer      io.Writer
-	total       int64
-	lastPrinted int64
-	startTime   int64
-	lastTime    int64
-	lastBytes   int64
-	itemID      string
+	writer           io.Writer
+	total            int64
+	lastPrinted      int64
+	startTime        int64
+	lastTime         int64
+	lastBytes        int64
+	itemID           string
+	progressCallback func(itemID string, mbDownloaded, speedMBps float64)
 }
 
 func NewProgressWriter(writer io.Writer) *ProgressWriter {
 	now := getCurrentTimeMillis()
 	return &ProgressWriter{
-		writer:      writer,
-		total:       0,
-		lastPrinted: 0,
-		startTime:   now,
-		lastTime:    now,
-		lastBytes:   0,
-		itemID:      "",
+		writer:           writer,
+		total:            0,
+		lastPrinted:      0,
+		startTime:        now,
+		lastTime:         now,
+		lastBytes:        0,
+		itemID:           "",
+		progressCallback: nil,
 	}
 }
 
 func NewProgressWriterWithID(writer io.Writer, itemID string) *ProgressWriter {
 	pw := NewProgressWriter(writer)
 	pw.itemID = itemID
+	return pw
+}
+
+func NewProgressWriterWithCallback(writer io.Writer, itemID string, callback func(string, float64, float64)) *ProgressWriter {
+	pw := NewProgressWriter(writer)
+	pw.itemID = itemID
+	pw.progressCallback = callback
+	return pw
+}
+
+// NewProgressWriterWithIDAndGlobalCallback creates a writer that uses the global callback
+func NewProgressWriterWithIDAndGlobalCallback(writer io.Writer, itemID string) *ProgressWriter {
+	pw := NewProgressWriter(writer)
+	pw.itemID = itemID
+	// Use global callback if available
+	pw.progressCallback = GetGlobalProgressCallback()
 	return pw
 }
 
@@ -170,6 +206,11 @@ func (pw *ProgressWriter) Write(p []byte) (int, error) {
 
 		if pw.itemID != "" {
 			UpdateItemProgress(pw.itemID, mbDownloaded, speedMBps)
+
+			// Call progress callback if provided
+			if pw.progressCallback != nil {
+				pw.progressCallback(pw.itemID, mbDownloaded, speedMBps)
+			}
 		}
 
 		pw.lastPrinted = pw.total

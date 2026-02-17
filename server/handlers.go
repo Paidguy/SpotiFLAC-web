@@ -71,8 +71,25 @@ func (s *Server) HandleSSE(c echo.Context) error {
 		case <-c.Request().Context().Done():
 			return nil
 		case msg := <-client.Channel:
-			if _, err := fmt.Fprintf(c.Response(), "data: %s\n\n", msg); err != nil {
-				return err
+			// Parse JSON to extract event type
+			var eventData map[string]interface{}
+			if err := json.Unmarshal(msg, &eventData); err == nil {
+				if eventType, ok := eventData["type"].(string); ok {
+					// Send as named event for addEventListener
+					if _, err := fmt.Fprintf(c.Response(), "event: %s\ndata: %s\n\n", eventType, msg); err != nil {
+						return err
+					}
+				} else {
+					// Fallback to default message event
+					if _, err := fmt.Fprintf(c.Response(), "data: %s\n\n", msg); err != nil {
+						return err
+					}
+				}
+			} else {
+				// Not JSON, send as-is
+				if _, err := fmt.Fprintf(c.Response(), "data: %s\n\n", msg); err != nil {
+					return err
+				}
 			}
 			c.Response().Flush()
 		}
@@ -250,6 +267,31 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 	if req.ItemID != "" {
 		backend.AddToQueue(req.ItemID, req.TrackName, req.ArtistName, req.AlbumName, req.SpotifyID)
 		backend.StartDownloadItem(req.ItemID)
+
+		// Set up global progress callback for this download
+		backend.SetGlobalProgressCallback(func(itemID string, mbDownloaded, speedMBps float64) {
+			// Calculate percentage if we have total size info
+			percent := mbDownloaded // Approximate percentage, actual file size unknown until complete
+
+			// Broadcast progress event
+			s.sseBroker.BroadcastJSON(map[string]interface{}{
+				"type":     "download:progress",
+				"item_id":  itemID,
+				"status":   "downloading",
+				"percent":  percent,
+				"speed":    speedMBps,
+				"message":  fmt.Sprintf("Downloading: %.2f MB (%.2f MB/s)", mbDownloaded, speedMBps),
+			})
+		})
+
+		// Broadcast start event
+		s.sseBroker.BroadcastJSON(map[string]interface{}{
+			"type":    "download:progress",
+			"item_id": req.ItemID,
+			"status":  "downloading",
+			"percent": 0,
+			"message": "Starting download...",
+		})
 	}
 
 	// Perform the download
@@ -272,6 +314,33 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 		downloadErr = fmt.Errorf("unsupported service: %s", req.Service)
 	}
 
+	// Clear global callback after download completes
+	if req.ItemID != "" {
+		backend.SetGlobalProgressCallback(nil)
+	}
+
+	// Check if file already exists
+	if downloadErr == nil && filePath != "" && strings.HasPrefix(filePath, "EXISTS:") {
+		actualPath := strings.TrimPrefix(filePath, "EXISTS:")
+		if req.ItemID != "" {
+			backend.SkipDownloadItem(req.ItemID, actualPath)
+			// Broadcast exists event
+			s.sseBroker.BroadcastJSON(map[string]interface{}{
+				"type":    "download:progress",
+				"item_id": req.ItemID,
+				"status":  "exists",
+				"percent": 100,
+				"message": "File already exists",
+			})
+		}
+		return c.JSON(http.StatusOK, DownloadResponse{
+			Success: true,
+			Message: "File already exists",
+			File:    actualPath,
+			ItemID:  req.ItemID,
+		})
+	}
+
 	if downloadErr != nil {
 		if req.AllowFallback && req.ItemID != "" {
 			// Return error but don't mark as failed yet - caller will handle fallback
@@ -286,7 +355,7 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 			backend.FailDownloadItem(req.ItemID, downloadErr.Error())
 			// Broadcast failure event
 			s.sseBroker.BroadcastJSON(map[string]interface{}{
-				"type":    "progress",
+				"type":    "download:progress",
 				"item_id": req.ItemID,
 				"status":  "error",
 				"message": downloadErr.Error(),
@@ -312,7 +381,7 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 		backend.CompleteDownloadItem(req.ItemID, filePath, finalSize)
 		// Broadcast completion event
 		s.sseBroker.BroadcastJSON(map[string]interface{}{
-			"type":    "progress",
+			"type":    "download:progress",
 			"item_id": req.ItemID,
 			"status":  "done",
 			"message": "Download completed",
