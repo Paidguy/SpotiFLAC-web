@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"spotiflac/backend"
 	"spotiflac/server"
 
@@ -151,6 +150,9 @@ func main() {
 	api.POST("/upload-image", srv.HandleUploadImage)
 	api.POST("/upload-image-bytes", srv.HandleUploadImageBytes)
 	api.GET("/read-image-base64", srv.HandleReadImageAsBase64)
+
+	// Audio file upload
+	api.POST("/upload-audio", srv.HandleUploadAudio)
 
 	// System info
 	api.GET("/os-info", srv.HandleGetOSInfo)

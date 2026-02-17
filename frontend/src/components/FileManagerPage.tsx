@@ -8,18 +8,17 @@ import { FolderOpen, RefreshCw, FileMusic, ChevronRight, ChevronDown, Pencil, Ey
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
-import { SelectFolder } from "../../wailsjs/go/main/App";
-import { backend } from "../../wailsjs/go/models";
+import type { backend } from "@/types/backend";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { getSettings } from "@/lib/settings";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, } from "@/components/ui/dialog";
-const ListDirectoryFiles = (path: string): Promise<backend.FileInfo[]> => (window as any)['go']['main']['App']['ListDirectoryFiles'](path);
-const PreviewRenameFiles = (files: string[], format: string): Promise<backend.RenamePreview[]> => (window as any)['go']['main']['App']['PreviewRenameFiles'](files, format);
-const RenameFilesByMetadata = (files: string[], format: string): Promise<backend.RenameResult[]> => (window as any)['go']['main']['App']['RenameFilesByMetadata'](files, format);
-const ReadFileMetadata = (path: string): Promise<backend.AudioMetadata> => (window as any)['go']['main']['App']['ReadFileMetadata'](path);
-const ReadTextFile = (path: string): Promise<string> => (window as any)['go']['main']['App']['ReadTextFile'](path);
-const RenameFileTo = (oldPath: string, newName: string): Promise<void> => (window as any)['go']['main']['App']['RenameFileTo'](oldPath, newName);
-const ReadImageAsBase64 = (path: string): Promise<string> => (window as any)['go']['main']['App']['ReadImageAsBase64'](path);
+const ListDirectoryFiles = (path: string): Promise<backend.FileInfo[]> => fetch(`/api/list-directory?path=${encodeURIComponent(path)}`).then(r => r.json());
+const PreviewRenameFiles = (files: string[], format: string): Promise<backend.RenamePreview[]> => fetch('/api/preview-rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files, format }) }).then(r => r.json());
+const RenameFilesByMetadata = (files: string[], format: string): Promise<backend.RenameResult[]> => fetch('/api/rename-files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files, format }) }).then(r => r.json());
+const ReadFileMetadata = (path: string): Promise<backend.AudioMetadata> => fetch(`/api/read-metadata?path=${encodeURIComponent(path)}`).then(r => r.json());
+const ReadTextFile = (path: string): Promise<string> => fetch(`/api/read-text-file?path=${encodeURIComponent(path)}`).then(r => r.text());
+const RenameFileTo = (oldPath: string, newName: string): Promise<void> => fetch('/api/rename-file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ old_path: oldPath, new_name: newName }) }).then(r => r.ok ? Promise.resolve() : Promise.reject(new Error('Rename failed')));
+const ReadImageAsBase64 = (path: string): Promise<string> => fetch(`/api/read-image-base64?path=${encodeURIComponent(path)}`).then(r => r.text());
 interface FileNode {
     name: string;
     path: string;
@@ -209,14 +208,10 @@ export function FileManagerPage() {
     const allLyricFiles = getAllFilesFlat(filterFilesByType(allFiles, "lyric"));
     const allCoverFiles = getAllFilesFlat(filterFilesByType(allFiles, "cover"));
     const handleSelectFolder = async () => {
-        try {
-            const path = await SelectFolder(rootPath);
-            if (path)
-                setRootPath(path);
-        }
-        catch (err) {
-            toast.error("Failed to select folder", { description: err instanceof Error ? err.message : "Unknown error" });
-        }
+        // In web mode, show info about server path management
+        toast.info("Server Mode", {
+            description: "File paths are managed on the server. Enter the absolute server path in the input field above."
+        });
     };
     const toggleExpand = (path: string) => {
         setAllFiles((prev) => toggleNodeExpand(prev, path));

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { GetDownloadProgress } from "../../wailsjs/go/main/App";
 export interface DownloadProgressInfo {
     is_downloading: boolean;
     mb_downloaded: number;
@@ -15,7 +14,11 @@ export function useDownloadProgress() {
     useEffect(() => {
         const pollProgress = async () => {
             try {
-                const progressInfo = await GetDownloadProgress();
+                const response = await fetch("/api/download-progress");
+                if (!response.ok) {
+                    throw new Error("Failed to get download progress");
+                }
+                const progressInfo = await response.json();
                 setProgress(progressInfo);
             }
             catch (error) {

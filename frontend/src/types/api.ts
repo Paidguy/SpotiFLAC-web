@@ -272,3 +272,99 @@ export interface AudioMetadata {
     disc_number: number;
     year: string;
 }
+
+// Audio Converter types
+export interface ConvertAudioRequest {
+    input_files: string[];
+    output_format: "mp3" | "m4a";
+    bitrate: string;
+    codec?: string;
+}
+
+export interface ConvertAudioResult {
+    input_file: string;
+    output_file: string;
+    success: boolean;
+    error?: string;
+}
+
+export type ConvertAudioResponse = ConvertAudioResult[];
+
+// Search API types
+export interface SearchTrack {
+    id: string;
+    name: string;
+    artists: string;
+    duration_ms: number;
+    is_explicit: boolean;
+    images: string;
+    external_urls: string;
+}
+
+export interface SearchAlbum {
+    id: string;
+    name: string;
+    artists: string;
+    release_date: string;
+    images: string;
+    external_urls: string;
+}
+
+export interface SearchArtist {
+    id: string;
+    name: string;
+    images: string;
+    external_urls: string;
+}
+
+export interface SearchPlaylist {
+    id: string;
+    name: string;
+    owner: string;
+    images: string;
+    external_urls: string;
+}
+
+export interface SearchResponse {
+    tracks: SearchTrack[];
+    albums: SearchAlbum[];
+    artists: SearchArtist[];
+    playlists: SearchPlaylist[];
+}
+
+export interface SearchRequest {
+    query: string;
+    limit: number;
+}
+
+export interface SearchByTypeRequest {
+    query: string;
+    search_type: string;
+    limit: number;
+    offset: number;
+}
+
+// Download Queue types
+export interface DownloadItem {
+    id: string;
+    track_name: string;
+    artist_name: string;
+    album_name: string;
+    status: "queued" | "downloading" | "completed" | "failed" | "skipped";
+    progress: number;
+    speed: number;
+    error_message: string;
+    file_path: string;
+}
+
+export interface DownloadQueueInfo {
+    is_downloading: boolean;
+    queue: DownloadItem[];
+    current_speed: number;
+    total_downloaded: number;
+    session_start_time: number;
+    queued_count: number;
+    completed_count: number;
+    failed_count: number;
+    skipped_count: number;
+}

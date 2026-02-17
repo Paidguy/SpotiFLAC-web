@@ -1,57 +1,113 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, ArrowLeft, Trash2 } from "lucide-react";
 import { AudioAnalysis } from "@/components/AudioAnalysis";
 import { SpectrumVisualization } from "@/components/SpectrumVisualization";
 import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
-import { SelectFile } from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
-import { OnFileDrop, OnFileDropOff } from "../../wailsjs/runtime/runtime";
 interface AudioAnalysisPageProps {
     onBack?: () => void;
 }
 export function AudioAnalysisPage({ onBack }: AudioAnalysisPageProps) {
     const { analyzing, result, analyzeFile, clearResult, selectedFilePath, spectrumLoading } = useAudioAnalysis();
     const [isDragging, setIsDragging] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     const handleSelectFile = async () => {
-        try {
-            const filePath = await SelectFile();
-            if (filePath) {
-                await analyzeFile(filePath);
-            }
+        fileInputRef.current?.click();
+    };
+
+    const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!file.name.toLowerCase().endsWith(".flac")) {
+            toast.error("Invalid File Type", {
+                description: "Please select a FLAC file for analysis",
+            });
+            return;
         }
-        catch (err) {
-            toast.error("File Selection Failed", {
-                description: err instanceof Error ? err.message : "Failed to select file",
+
+        // In web mode, we need to upload the file to the server first
+        // For now, we'll use the file path (this would need backend support)
+        try {
+            // Create FormData to upload the file
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const uploadResponse = await fetch("/api/upload-audio", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error("Failed to upload file");
+            }
+
+            const { file_path } = await uploadResponse.json();
+            await analyzeFile(file_path);
+        } catch (err) {
+            toast.error("File Upload Failed", {
+                description: err instanceof Error ? err.message : "Failed to upload file",
             });
         }
+
+        // Reset the input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
     };
-    const handleFileDrop = useCallback(async (_x: number, _y: number, paths: string[]) => {
+
+    const handleFileDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
         setIsDragging(false);
-        if (paths.length === 0)
-            return;
-        const filePath = paths[0];
-        if (!filePath.toLowerCase().endsWith(".flac")) {
+
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length === 0) return;
+
+        const file = files[0];
+        if (!file.name.toLowerCase().endsWith(".flac")) {
             toast.error("Invalid File Type", {
                 description: "Please drop a FLAC file for analysis",
             });
             return;
         }
-        await analyzeFile(filePath);
+
+        // Upload and analyze the file
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const uploadResponse = await fetch("/api/upload-audio", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error("Failed to upload file");
+            }
+
+            const { file_path } = await uploadResponse.json();
+            await analyzeFile(file_path);
+        } catch (err) {
+            toast.error("File Upload Failed", {
+                description: err instanceof Error ? err.message : "Failed to upload file",
+            });
+        }
     }, [analyzeFile]);
-    useEffect(() => {
-        OnFileDrop((x, y, paths) => {
-            handleFileDrop(x, y, paths);
-        }, true);
-        return () => {
-            OnFileDropOff();
-        };
-    }, [handleFileDrop]);
     const handleAnalyzeAnother = () => {
         clearResult();
     };
     return (<div className="space-y-6">
-      
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".flac"
+        onChange={handleFileInputChange}
+        style={{ display: "none" }}
+      />
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           {onBack && (<Button variant="ghost" size="icon" onClick={onBack}>
@@ -65,7 +121,7 @@ export function AudioAnalysisPage({ onBack }: AudioAnalysisPageProps) {
           </Button>)}
       </div>
 
-      
+
       {!result && !analyzing && (<div className={`flex flex-col items-center justify-center h-[400px] border-2 border-dashed rounded-lg transition-colors ${isDragging
                 ? "border-primary bg-primary/10"
                 : "border-muted-foreground/30"}`} onDragOver={(e) => {
@@ -74,10 +130,7 @@ export function AudioAnalysisPage({ onBack }: AudioAnalysisPageProps) {
             }} onDragLeave={(e) => {
                 e.preventDefault();
                 setIsDragging(false);
-            }} onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-            }} style={{ "--wails-drop-target": "drop" } as React.CSSProperties}>
+            }} onDrop={handleFileDrop}>
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
             <Upload className="h-8 w-8 text-primary"/>
           </div>

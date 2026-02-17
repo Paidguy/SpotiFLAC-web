@@ -3,15 +3,14 @@ import { X, Download, CheckCircle2, XCircle, Clock, FileCheck, Trash2, HardDrive
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { GetDownloadQueue, ClearCompletedDownloads, ClearAllDownloads, ExportFailedDownloads } from "../../wailsjs/go/main/App";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
-import { backend } from "../../wailsjs/go/models";
+import type { DownloadQueueInfo } from "@/types/api";
 interface DownloadQueueProps {
     isOpen: boolean;
     onClose: () => void;
 }
 export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
-    const [queueInfo, setQueueInfo] = useState<backend.DownloadQueueInfo>(new backend.DownloadQueueInfo({
+    const [queueInfo, setQueueInfo] = useState<DownloadQueueInfo>({
         is_downloading: false,
         queue: [],
         current_speed: 0,
@@ -21,13 +20,17 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
         completed_count: 0,
         failed_count: 0,
         skipped_count: 0,
-    }));
+    });
     useEffect(() => {
         if (!isOpen)
             return;
         const fetchQueue = async () => {
             try {
-                const info = await GetDownloadQueue();
+                const response = await fetch('/api/download-queue');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch download queue: ${response.statusText}`);
+                }
+                const info: DownloadQueueInfo = await response.json();
                 setQueueInfo(info);
             }
             catch (error) {
@@ -40,8 +43,18 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
     }, [isOpen]);
     const handleClearHistory = async () => {
         try {
-            await ClearCompletedDownloads();
-            const info = await GetDownloadQueue();
+            const response = await fetch('/api/clear-completed', {
+                method: 'POST',
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to clear completed downloads: ${response.statusText}`);
+            }
+
+            const queueResponse = await fetch('/api/download-queue');
+            if (!queueResponse.ok) {
+                throw new Error(`Failed to fetch download queue: ${queueResponse.statusText}`);
+            }
+            const info: DownloadQueueInfo = await queueResponse.json();
             setQueueInfo(info);
         }
         catch (error) {
@@ -50,8 +63,18 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
     };
     const handleReset = async () => {
         try {
-            await ClearAllDownloads();
-            const info = await GetDownloadQueue();
+            const response = await fetch('/api/clear-all', {
+                method: 'POST',
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to clear all downloads: ${response.statusText}`);
+            }
+
+            const queueResponse = await fetch('/api/download-queue');
+            if (!queueResponse.ok) {
+                throw new Error(`Failed to fetch download queue: ${queueResponse.statusText}`);
+            }
+            const info: DownloadQueueInfo = await queueResponse.json();
             setQueueInfo(info);
             toast.success("Download queue reset");
         }
@@ -61,7 +84,11 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
     };
     const handleExportFailed = async () => {
         try {
-            const message = await ExportFailedDownloads();
+            const response = await fetch('/api/export-failed');
+            if (!response.ok) {
+                throw new Error(`Failed to export failed downloads: ${response.statusText}`);
+            }
+            const message = await response.text();
             if (message.startsWith("Successfully")) {
                 toast.success(message);
             }

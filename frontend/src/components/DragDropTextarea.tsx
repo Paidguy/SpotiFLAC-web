@@ -1,9 +1,21 @@
 import { useState, useEffect } from "react";
 import type { DragEvent } from "react";
-import { UploadImageBytes, UploadImage, SelectImageVideo } from "../../wailsjs/go/main/App";
 import { Upload, Loader2, ImagePlus, X, Check, FileVideo, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+
+// API functions using fetch
+const UploadImageBytes = async (fileName: string, base64Data: string): Promise<string> => {
+    const response = await fetch('/api/upload-image-bytes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_name: fileName, data: base64Data })
+    });
+    if (!response.ok) throw new Error('Upload failed');
+    const result = await response.json();
+    return result.url || result.path;
+};
+
 interface UploadedFile {
     id: string;
     name: string;
@@ -98,38 +110,20 @@ export function DragDropMedia({ value, onChange, className }: DragDropMediaProps
         }
     };
     const handleSelectFile = async () => {
-        try {
-            const paths = await SelectImageVideo();
-            if (paths && paths.length > 0) {
-                const timestamp = Date.now();
-                const newFiles: UploadedFile[] = paths.map((p, i) => ({
-                    id: `select-${timestamp}-${i}`,
-                    name: p.split(/[\\/]/).pop() || 'unknown',
-                    url: '',
-                    type: p.match(/\.(mp4|mkv|webm|mov)$/i) ? 'video' : 'image',
-                    status: 'uploading'
-                }));
-                setFiles(prev => [...prev, ...newFiles]);
-                for (let i = 0; i < paths.length; i++) {
-                    const path = paths[i];
-                    const fileId = newFiles[i].id;
-                    try {
-                        const result = await UploadImage(path);
-                        setFiles(prev => prev.map(f => f.id === fileId
-                            ? { ...f, status: 'done', url: result }
-                            : f));
-                    }
-                    catch (err: any) {
-                        setFiles(prev => prev.map(f => f.id === fileId
-                            ? { ...f, status: 'error', error: err.message }
-                            : f));
-                    }
-                }
+        // Use HTML5 file input in web mode
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*,video/*';
+        input.multiple = true;
+
+        input.onchange = async (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files && files.length > 0) {
+                await handleFiles(Array.from(files));
             }
-        }
-        catch (err: any) {
-            console.error("Select file failed", err);
-        }
+        };
+
+        input.click();
     };
     const removeFile = (index: number) => {
         setFiles(prev => prev.filter((_, i) => i !== index));

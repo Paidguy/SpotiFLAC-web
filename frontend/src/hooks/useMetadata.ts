@@ -3,7 +3,6 @@ import { getSettings } from "@/lib/settings";
 import { fetchSpotifyMetadata } from "@/lib/api";
 import { toastWithSound as toast } from "@/lib/toast-with-sound";
 import { logger } from "@/lib/logger";
-import { AddFetchHistory } from "../../wailsjs/go/main/App";
 import type { SpotifyMetadataResponse } from "@/types/api";
 export function useMetadata() {
     const [loading, setLoading] = useState(false);
@@ -63,16 +62,25 @@ export function useMetadata() {
                 image = data.artist_info.images;
             }
             const jsonStr = JSON.stringify(data);
-            await AddFetchHistory({
-                id: crypto.randomUUID(),
-                url: url,
-                type: type,
-                name: name,
-                info: info,
-                image: image,
-                data: jsonStr,
-                timestamp: Math.floor(Date.now() / 1000)
+            const response = await fetch("/api/fetch-history", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    id: crypto.randomUUID(),
+                    url: url,
+                    type: type,
+                    name: name,
+                    info: info,
+                    image: image,
+                    data: jsonStr,
+                    timestamp: Math.floor(Date.now() / 1000)
+                })
             });
+            if (!response.ok) {
+                throw new Error("Failed to save fetch history");
+            }
         }
         catch (err) {
             console.error("Failed to save fetch history:", err);

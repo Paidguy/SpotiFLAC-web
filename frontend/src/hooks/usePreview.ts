@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { GetPreviewURL } from "@/../wailsjs/go/main/App";
 import { toast } from "sonner";
 export function usePreview() {
     const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
@@ -29,7 +28,12 @@ export function usePreview() {
                 setPlayingTrack(null);
             }
             setLoadingPreview(trackId);
-            const previewURL = await GetPreviewURL(trackId);
+            const response = await fetch(`/api/preview-url?track_id=${encodeURIComponent(trackId)}`);
+            if (!response.ok) {
+                throw new Error("Failed to get preview URL");
+            }
+            const data = await response.json();
+            const previewURL = data.preview_url;
             if (!previewURL) {
                 toast.error("Preview not available", {
                     description: `No preview found for "${trackName}"`,

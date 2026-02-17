@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { CheckTrackAvailability } from "../../wailsjs/go/main/App";
 import type { TrackAvailability } from "@/types/api";
 import { logger } from "@/lib/logger";
 export function useAvailability() {
@@ -20,8 +19,12 @@ export function useAvailability() {
         setError(null);
         try {
             logger.info(`Checking availability for track: ${spotifyId}`);
-            const response = await CheckTrackAvailability(spotifyId);
-            const availability: TrackAvailability = JSON.parse(response);
+            const response = await fetch(`/api/track-availability?spotify_track_id=${encodeURIComponent(spotifyId)}`);
+            if (!response.ok) {
+                throw new Error("Failed to check track availability");
+            }
+            const responseText = await response.text();
+            const availability: TrackAvailability = JSON.parse(responseText);
             setAvailabilityMap((prev) => {
                 const newMap = new Map(prev);
                 newMap.set(spotifyId, availability);

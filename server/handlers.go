@@ -107,7 +107,7 @@ func (s *Server) HandleGetSpotifyMetadata(c echo.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.Timeout)*time.Second)
 	defer cancel()
 
-	result, err := backend.GetSpotifyMetadata(ctx, req.URL, req.Batch, req.Delay)
+	result, err := backend.GetFilteredSpotifyData(ctx, req.URL, req.Batch, time.Duration(req.Delay)*time.Second)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -129,10 +129,8 @@ func (s *Server) HandleGetStreamingURLs(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Spotify track ID is required"})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	songlink, err := backend.GetStreamingServiceURLs(ctx, spotifyTrackID, region)
+	client := backend.NewSongLinkClient()
+	songlink, err := client.GetAllURLsFromSpotify(spotifyTrackID, region)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -250,12 +248,11 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 
 	// Create download item if ItemID is provided
 	if req.ItemID != "" {
-		backend.AddToDownloadQueue(req.ItemID, req.TrackName, req.ArtistName, req.AlbumName, req.SpotifyID)
-		backend.SetItemDownloading(req.ItemID)
+		backend.AddToQueue(req.ItemID, req.TrackName, req.ArtistName, req.AlbumName, req.SpotifyID)
+		backend.StartDownloadItem(req.ItemID)
 	}
 
 	// Perform the download
-	ctx := context.Background()
 	var downloadErr error
 	var filePath string
 	var message string
@@ -263,11 +260,14 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 
 	switch req.Service {
 	case "tidal":
-		filePath, downloadErr = backend.DownloadFromTidal(ctx, req.Query, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.ApiURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.Position, req.UseAlbumTrackNumber, req.SpotifyID, req.EmbedLyrics, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher)
+		downloader := backend.NewTidalDownloader(req.ApiURL)
+		filePath, downloadErr = downloader.Download(req.SpotifyID, req.OutputDir, req.Query, req.FilenameFormat, req.Position > 0, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, req.ServiceURL, req.AllowFallback, req.UseFirstArtistOnly)
 	case "qobuz":
-		filePath, downloadErr = backend.DownloadFromQobuz(ctx, req.Query, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.ApiURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.Position, req.UseAlbumTrackNumber, req.SpotifyID, req.EmbedLyrics, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher)
+		downloader := backend.NewQobuzDownloader()
+		filePath, downloadErr = downloader.DownloadTrack(req.SpotifyID, req.OutputDir, req.Query, req.FilenameFormat, req.Position > 0, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.UseAlbumTrackNumber, req.CoverURL, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, req.ServiceURL, req.AllowFallback, req.UseFirstArtistOnly)
 	case "amazon":
-		filePath, downloadErr = backend.DownloadFromAmazon(ctx, req.ServiceURL, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.OutputDir, req.AudioFormat, req.FilenameFormat, req.Position, req.UseAlbumTrackNumber, req.Duration, req.SpotifyID, req.EmbedLyrics, req.EmbedMaxQualityCover, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.SpotifyTotalDiscs, req.Copyright, req.Publisher)
+		downloader := backend.NewAmazonDownloader()
+		filePath, downloadErr = downloader.DownloadBySpotifyID(req.SpotifyID, req.OutputDir, req.Query, req.FilenameFormat, "", "", req.Position > 0, req.Position, req.TrackName, req.ArtistName, req.AlbumName, req.AlbumArtist, req.ReleaseDate, req.CoverURL, req.SpotifyTrackNumber, req.SpotifyDiscNumber, req.SpotifyTotalTracks, req.EmbedMaxQualityCover, req.SpotifyTotalDiscs, req.Copyright, req.Publisher, req.ServiceURL, req.UseFirstArtistOnly)
 	default:
 		downloadErr = fmt.Errorf("unsupported service: %s", req.Service)
 	}
@@ -283,7 +283,7 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 		}
 
 		if req.ItemID != "" {
-			backend.SetItemFailed(req.ItemID, downloadErr.Error())
+			backend.FailDownloadItem(req.ItemID, downloadErr.Error())
 			// Broadcast failure event
 			s.sseBroker.BroadcastJSON(map[string]interface{}{
 				"type":    "progress",
@@ -304,7 +304,12 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 	message = "Download completed successfully"
 
 	if req.ItemID != "" {
-		backend.SetItemCompleted(req.ItemID, filePath)
+		// Get file size
+		var finalSize float64
+		if fileInfo, err := os.Stat(filePath); err == nil {
+			finalSize = float64(fileInfo.Size()) / (1024 * 1024) // Convert to MB
+		}
+		backend.CompleteDownloadItem(req.ItemID, filePath, finalSize)
 		// Broadcast completion event
 		s.sseBroker.BroadcastJSON(map[string]interface{}{
 			"type":    "progress",
@@ -317,16 +322,16 @@ func (s *Server) HandleDownloadTrack(c echo.Context) error {
 
 	// Add to download history
 	historyItem := backend.HistoryItem{
-		TrackName:   req.TrackName,
-		ArtistName:  req.ArtistName,
-		AlbumName:   req.AlbumName,
-		Quality:     req.AudioFormat,
-		Format:      req.AudioFormat,
-		Timestamp:   time.Now().Unix(),
-		FilePath:    filePath,
-		Service:     req.Service,
+		Title:     req.TrackName,
+		Artists:   req.ArtistName,
+		Album:     req.AlbumName,
+		Quality:   req.AudioFormat,
+		Format:    req.AudioFormat,
+		Timestamp: time.Now().Unix(),
+		Path:      filePath,
+		SpotifyID: req.SpotifyID,
 	}
-	backend.AddDownloadHistory(historyItem)
+	backend.AddHistoryItem(historyItem, "SpotiFLAC")
 
 	return c.JSON(http.StatusOK, DownloadResponse{
 		Success: success,
@@ -579,7 +584,7 @@ func (s *Server) HandleGetDownloadQueue(c echo.Context) error {
 
 // HandleClearCompletedDownloads clears completed downloads from the queue
 func (s *Server) HandleClearCompletedDownloads(c echo.Context) error {
-	backend.ClearCompletedDownloads()
+	backend.ClearAllDownloads()
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -661,7 +666,7 @@ func (s *Server) HandleGetDefaults(c echo.Context) error {
 
 // HandleLoadSettings loads settings from file
 func (s *Server) HandleLoadSettings(c echo.Context) error {
-	configPath, err := backend.GetConfigDirectory("SpotiFLAC")
+	configPath, err := backend.GetFFmpegDir()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -691,7 +696,7 @@ func (s *Server) HandleSaveSettings(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	configPath, err := backend.GetConfigDirectory("SpotiFLAC")
+	configPath, err := backend.GetFFmpegDir()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -715,7 +720,7 @@ func (s *Server) HandleSaveSettings(c echo.Context) error {
 
 // HandleGetHistory returns download history
 func (s *Server) HandleGetHistory(c echo.Context) error {
-	history, err := backend.GetDownloadHistory()
+	history, err := backend.GetHistoryItems("SpotiFLAC")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -724,7 +729,7 @@ func (s *Server) HandleGetHistory(c echo.Context) error {
 
 // HandleDeleteHistory deletes all history
 func (s *Server) HandleDeleteHistory(c echo.Context) error {
-	if err := backend.ClearDownloadHistory(); err != nil {
+	if err := backend.ClearHistory("SpotiFLAC"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -737,7 +742,7 @@ func (s *Server) HandleDeleteHistoryItem(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "ID is required"})
 	}
 
-	if err := backend.DeleteDownloadHistoryItem(id); err != nil {
+	if err := backend.DeleteHistoryItem(id, "SpotiFLAC"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -746,7 +751,7 @@ func (s *Server) HandleDeleteHistoryItem(c echo.Context) error {
 
 // HandleGetFetchHistory returns fetch history
 func (s *Server) HandleGetFetchHistory(c echo.Context) error {
-	history, err := backend.GetFetchHistory()
+	history, err := backend.GetFetchHistoryItems("SpotiFLAC")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -755,7 +760,7 @@ func (s *Server) HandleGetFetchHistory(c echo.Context) error {
 
 // HandleClearFetchHistory clears fetch history
 func (s *Server) HandleClearFetchHistory(c echo.Context) error {
-	if err := backend.ClearFetchHistory(); err != nil {
+	if err := backend.ClearFetchHistory("SpotiFLAC"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -768,7 +773,7 @@ func (s *Server) HandleDeleteFetchHistoryItem(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "ID is required"})
 	}
 
-	if err := backend.DeleteFetchHistoryItem(id); err != nil {
+	if err := backend.DeleteFetchHistoryItem(id, "SpotiFLAC"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -782,7 +787,7 @@ func (s *Server) HandleClearFetchHistoryByType(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Type is required"})
 	}
 
-	if err := backend.ClearFetchHistoryByType(itemType); err != nil {
+	if err := backend.ClearFetchHistoryByType(itemType, "SpotiFLAC"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -796,7 +801,7 @@ func (s *Server) HandleAddFetchHistory(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	if err := backend.AddFetchHistory(item); err != nil {
+	if err := backend.AddFetchHistoryItem(item, "SpotiFLAC"); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -811,10 +816,8 @@ func (s *Server) HandleCheckTrackAvailability(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Spotify track ID is required"})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	availability, err := backend.CheckTrackAvailability(ctx, spotifyTrackID)
+	client := backend.NewSongLinkClient()
+	availability, err := client.CheckTrackAvailability(spotifyTrackID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -835,7 +838,7 @@ func (s *Server) HandleGetPreviewURL(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Track ID is required"})
 	}
 
-	previewURL, err := backend.GetSpotifyTrackPreview(trackID)
+	previewURL, err := backend.GetPreviewURL(trackID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -851,7 +854,7 @@ func (s *Server) HandleAnalyzeTrack(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "File path is required"})
 	}
 
-	analysis, err := backend.AnalyzeAudioFile(filePath)
+	analysis, err := backend.AnalyzeTrack(filePath)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -881,7 +884,7 @@ func (s *Server) HandleAnalyzeMultipleTracks(c echo.Context) error {
 	var results []map[string]interface{}
 
 	for _, filePath := range req.FilePaths {
-		analysis, err := backend.AnalyzeAudioFile(filePath)
+		analysis, err := backend.AnalyzeTrack(filePath)
 		if err != nil {
 			results = append(results, map[string]interface{}{
 				"file_path": filePath,
@@ -1179,17 +1182,23 @@ func (s *Server) HandleCheckFilesExistence(c echo.Context) error {
 
 	for i, track := range req.Tracks {
 		// Build the expected file path based on the filename format
-		filename := backend.GenerateFilename(backend.FilenameParams{
-			TrackName:      track.TrackName,
-			ArtistName:     track.ArtistName,
-			AlbumName:      track.AlbumName,
-			TrackNumber:    track.TrackNumber,
-			DiscNumber:     track.DiscNumber,
-			Format:         track.Format,
-			FilenameFormat: track.FilenameFormat,
-			Position:       track.Position,
-			UseAlbumTrackNumber: track.UseAlbumTrackNumber,
-		})
+		filename := backend.BuildExpectedFilename(
+			track.TrackName,
+			track.ArtistName,
+			track.AlbumName,
+			"", // albumArtist
+			"", // releaseDate
+			track.FilenameFormat,
+			"", // playlistName
+			"", // playlistOwner
+			track.UseAlbumTrackNumber,
+			track.Position,
+			track.DiscNumber,
+			track.UseAlbumTrackNumber,
+		)
+
+		// Add extension
+		filename += "." + track.Format
 
 		filePath := filepath.Join(req.OutputDir, filename)
 		if req.RootDir != "" {
@@ -1219,17 +1228,59 @@ func (s *Server) HandleCreateM3U8File(c echo.Context) error {
 	// SECURITY: Override output directory with server's configured path
 	req.OutputDir = s.downloadPath
 
-	if err := backend.CreateM3U8(req.M3U8Name, req.OutputDir, req.FilePaths); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	// TODO: Implement M3U8 creation - not currently in backend
+	return c.JSON(http.StatusNotImplemented, map[string]string{
+		"error": "M3U8 playlist creation not yet implemented",
+	})
 }
 
 // HandleGetOSInfo returns OS information
 func (s *Server) HandleGetOSInfo(c echo.Context) error {
-	osInfo := backend.GetOSInfo()
+	osInfo, err := backend.GetOSInfo()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
 	return c.JSON(http.StatusOK, map[string]string{"os": osInfo})
+}
+
+// HandleUploadAudio handles audio file uploads from browser
+func (s *Server) HandleUploadAudio(c echo.Context) error {
+	// Get the file from multipart form
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "No file provided"})
+	}
+
+	// Open the file
+	src, err := file.Open()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to open uploaded file"})
+	}
+	defer src.Close()
+
+	// Create uploads directory in server's download path
+	uploadsDir := filepath.Join(s.downloadPath, "uploads")
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create uploads directory"})
+	}
+
+	// Create destination file
+	dstPath := filepath.Join(uploadsDir, filepath.Base(file.Filename))
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create destination file"})
+	}
+	defer dst.Close()
+
+	// Copy file contents
+	if _, err := dst.ReadFrom(src); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to save file"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"path":     dstPath,
+		"filename": filepath.Base(file.Filename),
+	})
 }
 
 // HandleOpenFileManager opens the file manager (no-op in web mode)
