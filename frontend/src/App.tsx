@@ -322,12 +322,14 @@ function App() {
         }
         else if ("playlist_info" in metadata.metadata) {
             const { playlist_info } = metadata.metadata;
+            const ownerName = playlist_info.owner?.name || playlist_info.owner?.display_name || "Unknown playlist";
+            const trackTotal = playlist_info.tracks?.total ?? metadata.metadata.track_list.length;
             historyItem = {
                 url: spotifyUrl,
                 type: "playlist",
-                name: playlist_info.owner.name,
-                artist: `${playlist_info.tracks.total.toLocaleString()} tracks`,
-                image: playlist_info.cover || playlist_info.owner.images || "",
+                name: ownerName,
+                artist: `${trackTotal.toLocaleString()} tracks`,
+                image: playlist_info.cover || playlist_info.owner?.images || "",
             };
         }
         else if ("artist_info" in metadata.metadata) {

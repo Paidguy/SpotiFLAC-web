@@ -46,13 +46,16 @@ export function useMetadata() {
             }
             else if ("playlist_info" in data) {
                 type = "playlist";
-                if (data.playlist_info.name) {
-                    name = data.playlist_info.name;
+                const playlistName = (data.playlist_info as { name?: string }).name;
+                const ownerName = data.playlist_info.owner?.name;
+                const trackTotal = data.playlist_info.tracks?.total ?? data.track_list.length;
+                if (playlistName) {
+                    name = playlistName;
                 }
-                else if (data.playlist_info.owner.name) {
-                    name = data.playlist_info.owner.name;
+                else if (ownerName) {
+                    name = ownerName;
                 }
-                info = `${data.playlist_info.tracks.total} tracks`;
+                info = `${trackTotal} tracks`;
                 image = data.playlist_info.cover || "";
             }
             else if ("artist_info" in data) {
@@ -99,7 +102,9 @@ export function useMetadata() {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
             if ("playlist_info" in data) {
                 const playlistInfo = data.playlist_info;
-                if (!playlistInfo.owner.name && playlistInfo.tracks.total === 0 && data.track_list.length === 0) {
+                const ownerName = playlistInfo.owner?.name || playlistInfo.owner?.display_name;
+                const totalTracks = playlistInfo.tracks?.total ?? data.track_list.length;
+                if (!ownerName && totalTracks === 0 && data.track_list.length === 0) {
                     logger.warning("playlist appears to be empty or private");
                     toast.error("Playlist not found or may be private");
                     setMetadata(null);
@@ -127,7 +132,7 @@ export function useMetadata() {
             }
             else if ("playlist_info" in data) {
                 logger.success(`fetched playlist: ${data.track_list.length} tracks`);
-                logger.debug(`by ${data.playlist_info.owner.display_name || data.playlist_info.owner.name}`);
+                logger.debug(`by ${data.playlist_info.owner?.display_name || data.playlist_info.owner?.name || "unknown owner"}`);
             }
             else if ("artist_info" in data) {
                 logger.success(`fetched artist: ${data.artist_info.name}`);
