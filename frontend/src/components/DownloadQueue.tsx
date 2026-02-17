@@ -24,6 +24,7 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
     useEffect(() => {
         if (!isOpen)
             return;
+
         const fetchQueue = async () => {
             try {
                 const response = await fetch('/api/download-queue');
@@ -37,9 +38,36 @@ export function DownloadQueue({ isOpen, onClose }: DownloadQueueProps) {
                 console.error("Failed to get download queue:", error);
             }
         };
+
+        // Initial fetch
         fetchQueue();
-        const interval = setInterval(fetchQueue, 500);
-        return () => clearInterval(interval);
+
+        // Setup SSE for real-time updates
+        const eventSource = new EventSource('/api/events');
+
+        eventSource.addEventListener('download:progress', (event: MessageEvent) => {
+            try {
+                // Refresh queue when we get progress events to show real-time updates
+                // This is more efficient than polling every 500ms
+                JSON.parse(event.data); // Parse to validate, but we fetch full queue anyway
+                fetchQueue();
+            } catch (err) {
+                console.error('Failed to parse download progress event:', err);
+            }
+        });
+
+        eventSource.onerror = (error) => {
+            console.error('SSE connection error in DownloadQueue:', error);
+        };
+
+        // Fallback polling at reduced frequency (2s instead of 500ms)
+        // This ensures we don't miss updates if SSE connection drops
+        const interval = setInterval(fetchQueue, 2000);
+
+        return () => {
+            clearInterval(interval);
+            eventSource.close();
+        };
     }, [isOpen]);
     const handleClearHistory = async () => {
         try {
