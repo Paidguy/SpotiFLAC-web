@@ -1,102 +1,378 @@
-[![GitHub All Releases](https://img.shields.io/github/downloads/afkarxyz/SpotiFLAC/total?style=for-the-badge)](https://github.com/afkarxyz/SpotiFLAC/releases)
-[![Telegram Channel](https://img.shields.io/badge/CHANNEL-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/spotiflac)
-[![Telegram Community](https://img.shields.io/badge/COMMUNITY-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/spotiflac_chat)
+# SpotiFLAC
 
-![Image](https://github.com/user-attachments/assets/a6e92fdd-2944-45c1-83e8-e23a26c827af)
+[![Build Status](https://github.com/Paidguy/SpotiFLAC-web/workflows/Build%20and%20Test/badge.svg)](https://github.com/Paidguy/SpotiFLAC-web/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<div align="center">
+**Self-hosted web application to download Spotify tracks in high-quality FLAC audio from Tidal, Qobuz, and Amazon Music — no account required.**
 
-Get Spotify tracks in true FLAC from Tidal, Qobuz & Amazon Music — no account required.
+Stream Spotify for discovery, download in lossless quality for your library.
 
-![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgMjAgMjAiPjxwYXRoIGZpbGw9IiNmZmZmZmYiIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTIwIDEwLjg3M1YyMEw4LjQ3OSAxOC41MzdsLjAwMS03LjY2NEgyMFptLTEzLjEyIDBsLS4wMDEgNy40NjFMMCAxNy40NjF2LTYuNTg4aDYuODhaTTIwIDkuMjczSDguNDhsLS4wMDEtNy44MUwyMCAwdjkuMjczWk02Ljg3OSAxLjY2NmwuMDAxIDcuNjA3SDBWMi41MzlsNi44NzktLjg3M1oiLz48L3N2Zz4=)
-![macOS](https://img.shields.io/badge/macOS-10.13%2B-000000?style=for-the-badge&logo=apple&logoColor=white)
-![Linux](https://img.shields.io/badge/Linux-Any-FCC624?style=for-the-badge&logo=linux&logoColor=white)
+![SpotiFLAC Interface](https://github.com/user-attachments/assets/adbdc056-bace-44a9-8ba6-898b4526b65a)
 
-<a href="https://trendshift.io/repositories/15737" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15737" alt="afkarxyz%2FSpotiFLAC | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+---
 
-</div>
+## Features
 
-### [Download](https://github.com/afkarxyz/SpotiFLAC/releases)
+- **Multiple streaming sources**: Automatically fetch tracks from Tidal, Qobuz, or Amazon Music
+- **Supported input types**: Single tracks, albums, and playlists via Spotify URLs
+- **High-quality audio**: FLAC (lossless), up to 24-bit/192kHz depending on source
+- **Rich metadata**: Embedded cover art, lyrics, track info, album info
+- **Real-time progress**: Server-Sent Events (SSE) for live download progress updates
+- **Flexible organization**: Customizable folder structure and filename templates
+- **Download queue**: Track progress, retry failures, skip duplicates
+- **Download history**: Browse and search past downloads
+- **Dark/light theme**: Automatic system theme detection
+- **Self-hosted**: Full control over your music library, no external services
 
-## Screenshot
+---
 
-![Image](https://github.com/user-attachments/assets/adbdc056-bace-44a9-8ba6-898b4526b65a)
+## Quick Start with Docker Compose (Recommended)
 
-## Other projects
+The easiest way to run SpotiFLAC is with Docker Compose:
 
-### [SpotiFLAC Next](https://github.com/spotiverse/SpotiFLAC-Next)
+### 1. Create `docker-compose.yml`
 
-Get Spotify tracks in Hi-Res lossless FLACs — no account required.
+```yaml
+version: "3.9"
 
-### [SpotiDownloader](https://github.com/afkarxyz/SpotiDownloader)
+services:
+  spotiflac:
+    image: ghcr.io/paidguy/spotiflac-web:latest
+    # Or build from source:
+    # build: .
+    container_name: spotiflac
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./downloads:/downloads
+      - ./data:/app/data
+    environment:
+      - PORT=8080
+      - DOWNLOAD_PATH=/downloads
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+```
 
-Get Spotify tracks in MP3 and FLAC via spotidownloader.com
+### 2. Start the server
 
-### [SpotubeDL](https://spotubedl.com)
+```bash
+docker compose up -d
+```
 
-Download Spotify Tracks, Albums, Playlists as MP3/OGG/Opus with High Quality.
+### 3. Open your browser
 
-### [SpotiFLAC (Mobile)](https://github.com/zarzet/SpotiFLAC-Mobile)
+Navigate to **http://localhost:8080**
 
-SpotiFLAC for Android & iOS — maintained by [@zarzet](https://github.com/zarzet)
+That's it! Paste a Spotify URL and start downloading.
 
-## FAQ
+---
 
-### Is this software free?
+## Manual Installation / Build from Source
 
-_Yes. This software is completely free.
-You do not need an account, login, or subscription.
-All you need is an internet connection._
+### Prerequisites
 
-### Can using this software get my Spotify account suspended or banned?
+- **Go** 1.22 or later
+- **Node.js** 20 or later
+- **pnpm** package manager
+- **ffmpeg** (required for audio conversion and metadata embedding)
 
-_No.
-This software has no connection to your Spotify account.
-Spotify data is obtained through reverse engineering of the Spotify Web Player, not through user authentication._
+### Installation Steps
 
-### Where does the audio come from?
+#### 1. Install dependencies
 
-_The audio is fetched using third-party APIs._
+**macOS (Homebrew)**:
+```bash
+brew install go node pnpm ffmpeg
+```
 
-### Why does metadata fetching sometimes fail?
+**Ubuntu/Debian**:
+```bash
+sudo apt update
+sudo apt install golang-go nodejs npm ffmpeg
+sudo npm install -g pnpm
+```
 
-_This usually happens because your IP address has been rate-limited.
-You can wait and try again later, or use a VPN to bypass the rate limit._
+**Windows**:
+- Download Go: https://go.dev/dl/
+- Download Node.js: https://nodejs.org/
+- Install pnpm: `npm install -g pnpm`
+- Download ffmpeg: https://ffmpeg.org/download.html (add to PATH)
 
-### Why does Windows Defender or antivirus flag or delete the file?
+#### 2. Clone the repository
 
-_This is a false positive.
-It likely happens because the executable is compressed using UPX._
+```bash
+git clone https://github.com/Paidguy/SpotiFLAC-web.git
+cd SpotiFLAC-web
+```
 
-_If you are concerned, you can fork the repository and build the software yourself from source._
+#### 3. Build the frontend
 
-### Want to support the project?
+```bash
+cd frontend
+pnpm install
+pnpm run build
+cd ..
+```
 
-_If this software is useful and brings you value,
-consider supporting the project by buying me a coffee.
-Your support helps keep development going._
+#### 4. Build the backend
 
-[![Ko-fi](https://img.shields.io/badge/Support%20me%20on%20Ko--fi-72a5f2?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/afkarxyz)
+```bash
+go build -o spotiflac .
+```
+
+#### 5. Run the server
+
+```bash
+DOWNLOAD_PATH=/path/to/music PORT=8080 ./spotiflac
+```
+
+Open **http://localhost:8080** in your browser.
+
+---
+
+## Configuration
+
+### Environment Variables
+
+All configuration is done via environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | HTTP port the server listens on | `8080` |
+| `DOWNLOAD_PATH` | Absolute path where downloaded music is saved | `./downloads` |
+| `DATA_DIR` | Directory for settings and history database | `./data` |
+| `ENV` | Set to `development` for CORS and debug mode | (production) |
+
+**Example**:
+```bash
+PORT=3000 DOWNLOAD_PATH=/mnt/music DATA_DIR=/var/lib/spotiflac ./spotiflac
+```
+
+### Application Settings
+
+Additional settings (downloader service, audio quality, folder structure, filename format, etc.) are configured through the **Settings** panel in the web UI. These settings are persisted to `$DATA_DIR/settings.json`.
+
+**Note**: The download path is set via the `DOWNLOAD_PATH` environment variable and cannot be changed from the UI for security reasons.
+
+---
+
+## Reverse Proxy Setup (nginx)
+
+If running SpotiFLAC behind a reverse proxy, you **must** configure it to support Server-Sent Events (SSE) for real-time progress updates.
+
+### nginx Configuration
+
+```nginx
+server {
+    listen 80;
+    server_name spotiflac.example.com;
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Required for Server-Sent Events (real-time progress)
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+        chunked_transfer_encoding on;
+    }
+}
+```
+
+**Key settings for SSE**:
+- `proxy_buffering off` - Disables response buffering
+- `proxy_cache off` - Disables response caching
+- `proxy_set_header Connection ''` - Allows keep-alive connections
+- `chunked_transfer_encoding on` - Enables streaming responses
+
+### Caddy Configuration
+
+```caddy
+spotiflac.example.com {
+    reverse_proxy localhost:8080
+}
+```
+
+Caddy automatically handles SSE correctly.
+
+---
+
+## Troubleshooting
+
+### ffmpeg not found
+
+**Problem**: Downloads fail with "ffmpeg not found" error.
+
+**Solution**: Install ffmpeg and ensure it's in your system PATH:
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+
+# Windows
+# Download from https://ffmpeg.org/download.html and add to PATH
+```
+
+### Port already in use
+
+**Problem**: Server fails to start with "address already in use" error.
+
+**Solution**: Change the port using the `PORT` environment variable:
+
+```bash
+PORT=3000 ./spotiflac
+```
+
+Or check what's using port 8080:
+
+```bash
+# Linux/macOS
+lsof -i :8080
+
+# Windows
+netstat -ano | findstr :8080
+```
+
+### No files appearing in download path
+
+**Problem**: Downloads complete but no files appear.
+
+**Solution**:
+1. Check that `DOWNLOAD_PATH` is set correctly and the directory exists
+2. Verify the application has write permissions to the download directory
+3. For Docker: ensure the volume mount is correct in `docker-compose.yml`
+
+### Progress bar not updating
+
+**Problem**: Download starts but progress stays at 0%.
+
+**Solution**:
+1. Check if a reverse proxy is buffering SSE events (see nginx config above)
+2. Verify the browser console for EventSource connection errors
+3. Try accessing the server directly (without proxy) to isolate the issue
+
+### Download fails with service error
+
+**Problem**: "Failed to download from Tidal/Qobuz/Amazon" error.
+
+**Solution**:
+1. Check that the track is available on the selected service
+2. Try a different service (Auto mode tries multiple services)
+3. Some regions may have limited availability - try using a VPN
+4. Check if the service API is experiencing issues
+
+### Settings not persisting
+
+**Problem**: Settings reset after server restart.
+
+**Solution**:
+1. Ensure `DATA_DIR` is set correctly and writable
+2. For Docker: verify the data volume mount in `docker-compose.yml`
+3. Check server logs for file write errors
+
+---
+
+## API Endpoints
+
+SpotiFLAC exposes a REST API on `/api/*`:
+
+- `GET /api/health` - Health check
+- `POST /api/metadata` - Get track/album/playlist metadata from Spotify
+- `POST /api/download` - Download a track
+- `GET /api/download-queue` - Get current download queue status
+- `GET /api/events` - Server-Sent Events for real-time progress
+- `GET /api/settings` - Load settings
+- `POST /api/settings` - Save settings
+- `GET /api/history` - Get download history
+
+See `server/handlers.go` for the complete API reference.
+
+---
+
+## Development
+
+### Running in development mode
+
+```bash
+# Terminal 1: Start frontend dev server
+cd frontend
+pnpm install
+pnpm run dev
+
+# Terminal 2: Start backend
+ENV=development DOWNLOAD_PATH=./test-downloads go run .
+```
+
+The frontend dev server runs on `http://localhost:5173` with hot reload.
+
+### Project Structure
+
+```
+spotiflac/
+├── backend/           # Go backend logic (downloaders, metadata, etc.)
+├── frontend/          # React frontend (Vite + TypeScript)
+│   ├── src/
+│   │   ├── components/  # UI components
+│   │   ├── hooks/       # React hooks
+│   │   ├── lib/         # Utilities and API client
+│   │   └── types/       # TypeScript types
+│   └── dist/          # Built frontend (embedded in Go binary)
+├── server/            # HTTP handlers and SSE broker
+├── main.go            # Server entrypoint
+├── Dockerfile         # Docker build configuration
+└── docker-compose.yml # Docker Compose setup
+```
+
+---
 
 ## Disclaimer
 
-This project is for **educational and private use only**. The developer does not condone or encourage copyright infringement.
+This project is for **educational and private use only**. The developers do not condone or encourage copyright infringement.
 
 **SpotiFLAC** is a third-party tool and is not affiliated with, endorsed by, or connected to Spotify, Tidal, Qobuz, Amazon Music, or any other streaming service.
 
 You are solely responsible for:
 
-1. Ensuring your use of this software complies with your local laws.
-2. Reading and adhering to the Terms of Service of the respective platforms.
-3. Any legal consequences resulting from the misuse of this tool.
+1. Ensuring your use of this software complies with your local laws
+2. Reading and adhering to the Terms of Service of the respective platforms
+3. Any legal consequences resulting from the misuse of this tool
 
-The software is provided "as is", without warranty of any kind. The author assumes no liability for any bans, damages, or legal issues arising from its use.
+The software is provided "as is", without warranty of any kind. The authors assume no liability for any damages, bans, or legal issues arising from its use.
+
+---
 
 ## API Credits
 
 - **Tidal**: [hifi-api](https://github.com/binimum/hifi-api)
 - **Qobuz**: [dabmusic.xyz](https://dabmusic.xyz), [squid.wtf](https://squid.wtf), [jumo-dl](https://jumo-dl.pages.dev/)
 
-> [!TIP]
->
-> **Star Us**, You will receive all release notifications from GitHub without any delay ~
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## Support
+
+If you find this project useful, consider supporting the original author:
+
+[![Ko-fi](https://img.shields.io/badge/Support%20on%20Ko--fi-72a5f2?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/afkarxyz)
+
+---
+
+## Star History
+
+If this project helps you, please consider giving it a star! ⭐
+
+You'll receive notifications for all new releases.

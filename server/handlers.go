@@ -54,6 +54,7 @@ func (s *Server) HandleSSE(c echo.Context) error {
 	c.Response().Header().Set("Content-Type", "text/event-stream")
 	c.Response().Header().Set("Cache-Control", "no-cache")
 	c.Response().Header().Set("Connection", "keep-alive")
+	c.Response().Header().Set("X-Accel-Buffering", "no")
 	c.Response().Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Create new client

@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"spotiflac/backend"
 	"spotiflac/server"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -193,7 +197,27 @@ func main() {
 	log.Printf("Download path: %s", downloadPath)
 	log.Printf("Data directory: %s", dataDir)
 
-	if err := e.Start(address); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("Failed to start server: %v", err)
+	// Start server in a goroutine
+	go func() {
+		if err := e.Start(address); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := e.Shutdown(ctx); err != nil {
+		log.Printf("Server shutdown error: %v", err)
 	}
+
+	log.Println("Server exited")
 }
