@@ -9,6 +9,7 @@ import { DownloadProgress } from "./DownloadProgress";
 import type { TrackMetadata, TrackAvailability } from "@/types/api";
 interface PlaylistInfoProps {
     playlistInfo: {
+        name?: string;
         owner: {
             name: string;
             display_name: string;
@@ -81,7 +82,7 @@ interface PlaylistInfoProps {
     onBack?: () => void;
 }
 export function PlaylistInfo({ playlistInfo, trackList, searchQuery, sortBy, selectedTracks, downloadedTracks, failedTracks, skippedTracks, downloadingTrack, isDownloading, bulkDownloadType, downloadProgress, currentDownloadInfo, currentPage, itemsPerPage, downloadedLyrics, failedLyrics, skippedLyrics, downloadingLyricsTrack, checkingAvailabilityTrack, availabilityMap, downloadedCovers, failedCovers, skippedCovers, downloadingCoverTrack, isBulkDownloadingCovers, isBulkDownloadingLyrics, onSearchChange, onSortChange, onToggleTrack, onToggleSelectAll, onDownloadTrack, onDownloadLyrics, onDownloadCover, onCheckAvailability, onDownloadAllLyrics, onDownloadAllCovers, onDownloadAll, onDownloadSelected, onStopDownload, onOpenFolder, onPageChange, onAlbumClick, onArtistClick, onTrackClick, onBack, }: PlaylistInfoProps) {
-    const ownerName = playlistInfo.owner?.name || playlistInfo.owner?.display_name || "Unknown playlist";
+    const playlistName = playlistInfo.name || "Unknown playlist";
     const ownerDisplayName = playlistInfo.owner?.display_name || playlistInfo.owner?.name || "Unknown owner";
     const trackTotal = playlistInfo.tracks?.total ?? trackList.length;
     const followerTotal = playlistInfo.followers?.total ?? 0;
@@ -94,11 +95,11 @@ export function PlaylistInfo({ playlistInfo, trackList, searchQuery, sortBy, sel
       </div>)}
         <CardContent className="px-6">
           <div className="flex gap-6 items-start">
-            {playlistInfo.cover && (<img src={playlistInfo.cover} alt={ownerName} className="w-48 h-48 rounded-md shadow-lg object-cover"/>)}
+            {playlistInfo.cover && (<img src={playlistInfo.cover} alt={playlistName} className="w-48 h-48 rounded-md shadow-lg object-cover"/>)}
             <div className="flex-1 space-y-4">
               <div className="space-y-2">
                 <p className="text-sm font-medium">Playlist</p>
-                <h2 className="text-4xl font-bold">{ownerName}</h2>
+                <h2 className="text-4xl font-bold">{playlistName}</h2>
                 {playlistInfo.description && (<p className="text-sm text-muted-foreground">{playlistInfo.description}</p>)}
                 <div className="flex items-center gap-2 text-sm">
                   <div className="flex items-center gap-2">
@@ -154,7 +155,7 @@ export function PlaylistInfo({ playlistInfo, trackList, searchQuery, sortBy, sel
       </Card>
       <div className="space-y-4">
         <SearchAndSort searchQuery={searchQuery} sortBy={sortBy} onSearchChange={onSearchChange} onSortChange={onSortChange}/>
-        <TrackList tracks={trackList} searchQuery={searchQuery} sortBy={sortBy} selectedTracks={selectedTracks} downloadedTracks={downloadedTracks} failedTracks={failedTracks} skippedTracks={skippedTracks} downloadingTrack={downloadingTrack} isDownloading={isDownloading} currentPage={currentPage} itemsPerPage={itemsPerPage} showCheckboxes={true} hideAlbumColumn={false} folderName={ownerName} downloadedLyrics={downloadedLyrics} failedLyrics={failedLyrics} skippedLyrics={skippedLyrics} downloadingLyricsTrack={downloadingLyricsTrack} checkingAvailabilityTrack={checkingAvailabilityTrack} availabilityMap={availabilityMap} downloadedCovers={downloadedCovers} failedCovers={failedCovers} skippedCovers={skippedCovers} downloadingCoverTrack={downloadingCoverTrack} onToggleTrack={onToggleTrack} onToggleSelectAll={onToggleSelectAll} onDownloadTrack={onDownloadTrack} onDownloadLyrics={onDownloadLyrics} onDownloadCover={onDownloadCover} onCheckAvailability={onCheckAvailability} onPageChange={onPageChange} onAlbumClick={onAlbumClick} onArtistClick={onArtistClick} onTrackClick={onTrackClick}/>
+        <TrackList tracks={trackList} searchQuery={searchQuery} sortBy={sortBy} selectedTracks={selectedTracks} downloadedTracks={downloadedTracks} failedTracks={failedTracks} skippedTracks={skippedTracks} downloadingTrack={downloadingTrack} isDownloading={isDownloading} currentPage={currentPage} itemsPerPage={itemsPerPage} showCheckboxes={true} hideAlbumColumn={false} folderName={playlistName} downloadedLyrics={downloadedLyrics} failedLyrics={failedLyrics} skippedLyrics={skippedLyrics} downloadingLyricsTrack={downloadingLyricsTrack} checkingAvailabilityTrack={checkingAvailabilityTrack} availabilityMap={availabilityMap} downloadedCovers={downloadedCovers} failedCovers={failedCovers} skippedCovers={skippedCovers} downloadingCoverTrack={downloadingCoverTrack} onToggleTrack={onToggleTrack} onToggleSelectAll={onToggleSelectAll} onDownloadTrack={onDownloadTrack} onDownloadLyrics={onDownloadLyrics} onDownloadCover={onDownloadCover} onCheckAvailability={onCheckAvailability} onPageChange={onPageChange} onAlbumClick={onAlbumClick} onArtistClick={onArtistClick} onTrackClick={onTrackClick}/>
       </div>
     </div>);
 }
