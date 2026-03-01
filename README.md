@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎵 SpotiFLAC
+# 🎵 SpotiFLAC WEB
 
 [![Build Status](https://github.com/Paidguy/SpotiFLAC-web/workflows/Build%20and%20Test/badge.svg)](https://github.com/Paidguy/SpotiFLAC-web/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
