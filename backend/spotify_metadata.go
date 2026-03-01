@@ -102,6 +102,7 @@ type AlbumResponsePayload struct {
 }
 
 type PlaylistInfoMetadata struct {
+	Name string `json:"name"`
 	Tracks struct {
 		Total int `json:"total"`
 	} `json:"tracks"`
@@ -963,10 +964,11 @@ func (c *SpotifyMetadataClient) formatAlbumData(raw *apiAlbumResponse) (*AlbumRe
 
 func (c *SpotifyMetadataClient) formatPlaylistData(raw *apiPlaylistResponse) PlaylistResponsePayload {
 	var info PlaylistInfoMetadata
+	info.Name = raw.Name
 	info.Tracks.Total = raw.Count
 	info.Followers.Total = raw.Followers
 	info.Owner.DisplayName = raw.Owner.Name
-	info.Owner.Name = raw.Name
+	info.Owner.Name = raw.Owner.Name
 	info.Owner.Images = raw.Owner.Avatar
 	info.Cover = raw.Cover
 	info.Description = raw.Description
