@@ -7,7 +7,7 @@ COPY frontend/package.json frontend/pnpm-lock.yaml* ./
 
 # Install pnpm and dependencies
 RUN npm install -g pnpm && \
-    pnpm install --frozen-lockfile || pnpm install
+    pnpm install --frozen-lockfile --allow-build=esbuild --allow-build=sharp
 
 # Copy frontend source code
 COPY frontend/ ./
@@ -16,7 +16,7 @@ COPY frontend/ ./
 RUN pnpm run build
 
 # Stage 2: Build Go binary
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /app
 
 # Install build dependencies
